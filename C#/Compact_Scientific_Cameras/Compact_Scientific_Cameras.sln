@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.32126.315
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Read_Parameters", "Read_Parameters\Read_Parameters.csproj", "{4DE3998A-9A46-46CF-A099-C13468A92E3B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Hardware_Triggering", "Hardware_Triggering\Hardware_Triggering.csproj", "{F8072EAD-D580-469E-B4A8-2EFEFC951EA3}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{4DE3998A-9A46-46CF-A099-C13468A92E3B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4DE3998A-9A46-46CF-A099-C13468A92E3B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4DE3998A-9A46-46CF-A099-C13468A92E3B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4DE3998A-9A46-46CF-A099-C13468A92E3B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F8072EAD-D580-469E-B4A8-2EFEFC951EA3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F8072EAD-D580-469E-B4A8-2EFEFC951EA3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F8072EAD-D580-469E-B4A8-2EFEFC951EA3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F8072EAD-D580-469E-B4A8-2EFEFC951EA3}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {16938807-BBAF-42C2-8AAB-15C69A11C937}
+	EndGlobalSection
+EndGlobal
