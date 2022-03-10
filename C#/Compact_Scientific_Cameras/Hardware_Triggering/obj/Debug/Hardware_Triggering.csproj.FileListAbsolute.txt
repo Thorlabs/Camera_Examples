@@ -1,0 +1,17 @@
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Hardware_Triggering\bin\Debug\Hardware_Triggering.exe.config
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Hardware_Triggering\bin\Debug\Hardware_Triggering.exe
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Hardware_Triggering\bin\Debug\Hardware_Triggering.pdb
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Hardware_Triggering\bin\Debug\Thorlabs.TSI.Core.dll
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Hardware_Triggering\bin\Debug\Thorlabs.TSI.CoreInterfaces.dll
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Hardware_Triggering\bin\Debug\Thorlabs.TSI.ImageData.dll
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Hardware_Triggering\bin\Debug\Thorlabs.TSI.ImageDataInterfaces.dll
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Hardware_Triggering\bin\Debug\Thorlabs.TSI.TLCamera.dll
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Hardware_Triggering\bin\Debug\Thorlabs.TSI.TLCameraInterfaces.dll
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Hardware_Triggering\bin\Debug\thorlabs_tsi_camera_sdk1_cli.dll
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Hardware_Triggering\bin\Debug\Thorlabs.TSI.ColorInterfaces.dll
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Hardware_Triggering\bin\Debug\Thorlabs.TSI.PolarizationInterfaces.dll
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Hardware_Triggering\obj\Debug\Hardware_Triggering.csproj.AssemblyReference.cache
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Hardware_Triggering\obj\Debug\Hardware_Triggering.csproj.CoreCompileInputs.cache
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Hardware_Triggering\obj\Debug\Hardware_Triggering.csproj.CopyComplete
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Hardware_Triggering\obj\Debug\Hardware_Triggering.exe
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Hardware_Triggering\obj\Debug\Hardware_Triggering.pdb

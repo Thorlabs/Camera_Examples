@@ -1,0 +1,7 @@
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Read_Parameters\bin\Debug\Read_Parameters.exe.config
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Read_Parameters\bin\Debug\Read_Parameters.exe
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Read_Parameters\bin\Debug\Read_Parameters.pdb
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Read_Parameters\obj\Debug\Read_Parameters.csproj.AssemblyReference.cache
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Read_Parameters\obj\Debug\Read_Parameters.csproj.CoreCompileInputs.cache
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Read_Parameters\obj\Debug\Read_Parameters.exe
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Read_Parameters\obj\Debug\Read_Parameters.pdb
