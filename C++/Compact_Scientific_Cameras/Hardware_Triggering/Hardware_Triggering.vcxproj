@@ -140,10 +140,10 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\..\..\..\Program Files\Thorlabs\Scientific Imaging\Scientific Camera Support\Scientific Camera Interfaces\SDK\Native Toolkit\load_dll_helpers\tl_camera_sdk_load.c" />
-    <ClCompile Include="..\..\..\..\..\Program Files\Thorlabs\Scientific Imaging\Scientific Camera Support\Scientific Camera Interfaces\SDK\Native Toolkit\load_dll_helpers\tl_color_demosaic_load.c" />
-    <ClCompile Include="..\..\..\..\..\Program Files\Thorlabs\Scientific Imaging\Scientific Camera Support\Scientific Camera Interfaces\SDK\Native Toolkit\load_dll_helpers\tl_color_processing_load.c" />
-    <ClCompile Include="..\..\..\..\..\Program Files\Thorlabs\Scientific Imaging\Scientific Camera Support\Scientific Camera Interfaces\SDK\Native Toolkit\load_dll_helpers\tl_mono_to_color_processing_load.c" />
+    <ClCompile Include="..\..\..\..\..\..\..\..\Program Files\Thorlabs\Scientific Imaging\Scientific Camera Support\Scientific Camera Interfaces\SDK\Native Toolkit\load_dll_helpers\tl_camera_sdk_load.c" />
+    <ClCompile Include="..\..\..\..\..\..\..\..\Program Files\Thorlabs\Scientific Imaging\Scientific Camera Support\Scientific Camera Interfaces\SDK\Native Toolkit\load_dll_helpers\tl_color_demosaic_load.c" />
+    <ClCompile Include="..\..\..\..\..\..\..\..\Program Files\Thorlabs\Scientific Imaging\Scientific Camera Support\Scientific Camera Interfaces\SDK\Native Toolkit\load_dll_helpers\tl_color_processing_load.c" />
+    <ClCompile Include="..\..\..\..\..\..\..\..\Program Files\Thorlabs\Scientific Imaging\Scientific Camera Support\Scientific Camera Interfaces\SDK\Native Toolkit\load_dll_helpers\tl_mono_to_color_processing_load.c" />
     <ClCompile Include="Hardware_Triggering.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
