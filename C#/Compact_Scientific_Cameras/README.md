@@ -15,20 +15,9 @@ This example goes through all settable/gettable parameters for the cameras and p
 This example will use the dll's here: \Scientific Camera Interfaces\SDK\DotNet Toolkit\dlls\
 
 2. Set Project Platform under Project -> Properties -> Build. This should be selected to match the bit-version of the dll's you plan to use (e.g. x64 for 64-bit dll's). 
-
-3. Add References to:
-  * Thorlabs.TSI.Core
-  * Thorlabs.TSI.Core Interfaces
-  * Thorlabs.TSI.ImageData
-  * Thorlabs.TSI.ImageDataInterfaces
-  * Thorlabs.TSI.TLCamera
-  * Thorlabs.TSI.TLCameraInterfaces
-  * thorlabs_tsi_camera_sdk1_cli
-  * System.Drawing
-
-4. Copy the dll's from the managed folder to the bin of this project: 
+3. Copy the dll's from the managed folder to the bin of this project: 
 \Camera_Examples\C#\Compact_Scientific_Cameras\Hardware_Triggering\bin\Debug\
 
-5. Before running, set the desired startup file. 
+4. Before running, set the desired startup file. 
 
 
