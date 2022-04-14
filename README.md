@@ -1,4 +1,4 @@
-# Cameras_Examples    
+# Camera_Examples    
 Software examples for Thorlabs' imaging products (e.g. Scientific Cameras)
 
 ## Repo Organization
