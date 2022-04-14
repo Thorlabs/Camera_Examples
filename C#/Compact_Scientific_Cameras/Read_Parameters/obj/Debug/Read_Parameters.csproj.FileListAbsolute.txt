@@ -5,3 +5,14 @@ C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Ca
 C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Read_Parameters\obj\Debug\Read_Parameters.csproj.CoreCompileInputs.cache
 C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Read_Parameters\obj\Debug\Read_Parameters.exe
 C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Read_Parameters\obj\Debug\Read_Parameters.pdb
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Read_Parameters\bin\Debug\Thorlabs.TSI.Core.dll
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Read_Parameters\bin\Debug\Thorlabs.TSI.CoreInterfaces.dll
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Read_Parameters\bin\Debug\Thorlabs.TSI.ImageData.dll
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Read_Parameters\bin\Debug\Thorlabs.TSI.ImageDataInterfaces.dll
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Read_Parameters\bin\Debug\Thorlabs.TSI.TLCamera.dll
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Read_Parameters\bin\Debug\Thorlabs.TSI.TLCameraInterfaces.dll
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Read_Parameters\bin\Debug\thorlabs_tsi_camera_sdk1_cli.dll
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Read_Parameters\bin\Debug\Thorlabs.TSI.ColorInterfaces.dll
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Read_Parameters\bin\Debug\Thorlabs.TSI.PolarizationInterfaces.dll
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Read_Parameters\obj\Debug\Read_Parameters.csproj.CopyComplete
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Read_Parameters\obj\Debug\Read_Parameters.csproj.SuggestedBindingRedirects.cache

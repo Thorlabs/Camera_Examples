@@ -15,3 +15,4 @@ C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Ca
 C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Hardware_Triggering\obj\Debug\Hardware_Triggering.csproj.CopyComplete
 C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Hardware_Triggering\obj\Debug\Hardware_Triggering.exe
 C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Hardware_Triggering\obj\Debug\Hardware_Triggering.pdb
+C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Hardware_Triggering\obj\Debug\Hardware_Triggering.csproj.SuggestedBindingRedirects.cache

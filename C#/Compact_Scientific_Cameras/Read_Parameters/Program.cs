@@ -36,7 +36,7 @@ namespace Read_Parameters
             //Get Camera Sensor Type
             Console.WriteLine("Sebsor Type: {0}", cam.CameraSensorType.ToString());
 
-            //Gets the camera sensor dimensions in pixels
+            //Get the camera sensor dimensions in pixels
             Console.WriteLine("Sensor Size: {0}px x {1}px", cam.SensorWidth_pixels, cam.SensorHeight_pixels);
 
             //Get Camera Bit Depth
@@ -102,6 +102,13 @@ namespace Read_Parameters
             Console.WriteLine("Bin X Value: {0} \nBin Y Value: {1} \nROI X Value: {2} \nROI Y Value: {3} \nROI Width {4} \nROI Height {5}", cam.ROIAndBin.BinX,
                 cam.ROIAndBin.BinY, cam.ROIAndBin.ROIOriginX_pixels, cam.ROIAndBin.ROIOriginY_pixels, cam.ROIAndBin.ROIWidth_pixels, cam.ROIAndBin.ROIHeight_pixels);
 
+            //Close camera and clean up resources
+            Console.WriteLine("Camera closing");
+            cam.Disarm();
+            cam.Dispose();
+            sdk.Dispose();
+            Console.WriteLine("Press Enter Key to Close");
+            Console.ReadLine();
         }
     }
 }
