@@ -18,16 +18,16 @@
     <ClCompile Include="Read_Parameters.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\..\..\Program Files\Thorlabs\Scientific Imaging\Scientific Camera Support\Scientific Camera Interfaces\SDK\Native Toolkit\load_dll_helpers\tl_camera_sdk_load.c">
+    <ClCompile Include="..\..\..\..\..\..\..\..\Program Files\Thorlabs\Scientific Imaging\Scientific Camera Support\Scientific Camera Interfaces\SDK\Native Toolkit\load_dll_helpers\tl_camera_sdk_load.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\..\..\Program Files\Thorlabs\Scientific Imaging\Scientific Camera Support\Scientific Camera Interfaces\SDK\Native Toolkit\load_dll_helpers\tl_color_demosaic_load.c">
+    <ClCompile Include="..\..\..\..\..\..\..\..\Program Files\Thorlabs\Scientific Imaging\Scientific Camera Support\Scientific Camera Interfaces\SDK\Native Toolkit\load_dll_helpers\tl_color_demosaic_load.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\..\..\Program Files\Thorlabs\Scientific Imaging\Scientific Camera Support\Scientific Camera Interfaces\SDK\Native Toolkit\load_dll_helpers\tl_color_processing_load.c">
+    <ClCompile Include="..\..\..\..\..\..\..\..\Program Files\Thorlabs\Scientific Imaging\Scientific Camera Support\Scientific Camera Interfaces\SDK\Native Toolkit\load_dll_helpers\tl_color_processing_load.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\..\..\Program Files\Thorlabs\Scientific Imaging\Scientific Camera Support\Scientific Camera Interfaces\SDK\Native Toolkit\load_dll_helpers\tl_mono_to_color_processing_load.c">
+    <ClCompile Include="..\..\..\..\..\..\..\..\Program Files\Thorlabs\Scientific Imaging\Scientific Camera Support\Scientific Camera Interfaces\SDK\Native Toolkit\load_dll_helpers\tl_mono_to_color_processing_load.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
