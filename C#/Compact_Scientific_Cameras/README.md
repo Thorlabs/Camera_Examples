@@ -20,12 +20,12 @@ This example will use the dll's here: \Scientific Camera Interfaces\SDK\DotNet T
 
 5. The References are already added to the project, but in the event they need to be re-added you will need the following: 
    * Thorlabs.TSI.Core
-   * TThorlabs.TSI.Core Interfaces
-   * TThorlabs.TSI.ImageData
-   * TThorlabs.TSI.ImageDataInterfaces
-   * TThorlabs.TSI.TLCamera
-   * TThorlabs.TSI.TLCameraInterfaces
-   * Tthorlabs_tsi_camera_sdk1_cli
-   * TSystem.Drawing
+   * Thorlabs.TSI.Core Interfaces
+   * Thorlabs.TSI.ImageData
+   * Thorlabs.TSI.ImageDataInterfaces
+   * Thorlabs.TSI.TLCamera
+   * Thorlabs.TSI.TLCameraInterfaces
+   * thorlabs_tsi_camera_sdk1_cli
+   * System.Drawing
 
 
