@@ -1,3 +1,4 @@
-## This folder contains example code written for products that are obsoleted
+## This folder contains example code written for products that have been obsoleted.
 
-Please be aware that any examlpes here are subject to deletion if the supporting libraries are changed or the implementation is no longer able to be supported. The code and any supporting files here are expected to work with the most recent distribution of the relevant libraries unless otherwise noted. 
+
+Please be aware that any examples for obsolete products are subject to deletion if the supporting libraries are changed or the implementation is no longer supported by the host language. The configurations used to test each example is listed in its description file.
