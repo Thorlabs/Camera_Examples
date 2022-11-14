@@ -6,8 +6,10 @@
 *.vs
 *.lib
 *.dll
+!CameraTypeConversion.dll
 *.cache
 *.user
 *.exe
 *.ilk
 *.obj
+*.cfg

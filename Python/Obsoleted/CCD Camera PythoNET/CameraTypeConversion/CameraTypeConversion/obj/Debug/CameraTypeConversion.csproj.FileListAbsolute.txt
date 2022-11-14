@@ -1,0 +1,11 @@
+C:\Users\manzelmi\source\repos\CameraTypeConversion\CameraTypeConversion\bin\Debug\CameraTypeConversion.dll
+C:\Users\manzelmi\source\repos\CameraTypeConversion\CameraTypeConversion\bin\Debug\CameraTypeConversion.pdb
+C:\Users\manzelmi\source\repos\CameraTypeConversion\CameraTypeConversion\bin\Debug\Thorlabs.TSI.ImageData.dll
+C:\Users\manzelmi\source\repos\CameraTypeConversion\CameraTypeConversion\bin\Debug\Thorlabs.TSI.ImageDataInterfaces.dll
+C:\Users\manzelmi\source\repos\CameraTypeConversion\CameraTypeConversion\bin\Debug\Thorlabs.TSI.CoreInterfaces.dll
+C:\Users\manzelmi\source\repos\CameraTypeConversion\CameraTypeConversion\bin\Debug\Thorlabs.TSI.Core.dll
+C:\Users\manzelmi\source\repos\CameraTypeConversion\CameraTypeConversion\obj\Debug\CameraTypeConversion.csproj.AssemblyReference.cache
+C:\Users\manzelmi\source\repos\CameraTypeConversion\CameraTypeConversion\obj\Debug\CameraTypeConversion.csproj.CoreCompileInputs.cache
+C:\Users\manzelmi\source\repos\CameraTypeConversion\CameraTypeConversion\obj\Debug\CameraTypeConversion.csproj.CopyComplete
+C:\Users\manzelmi\source\repos\CameraTypeConversion\CameraTypeConversion\obj\Debug\CameraTypeConversion.dll
+C:\Users\manzelmi\source\repos\CameraTypeConversion\CameraTypeConversion\obj\Debug\CameraTypeConversion.pdb
