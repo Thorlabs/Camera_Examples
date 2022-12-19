@@ -7,7 +7,6 @@
 #include <windows.h>
 #include "tl_camera_sdk.h"
 #include "tl_camera_sdk_load.h"
-//This is a comment
 
 int is_camera_sdk_open = 0;
 int is_camera_dll_open = 0;
