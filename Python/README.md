@@ -1,10 +1,10 @@
 ## Included Examples
 
 ### Grab Single Frame: 
-This examples initializes the first detected camera and sets up for hardware triggering. A loop is started that waits for 5 images to be requested and received. Each image will be saved to the exe location for the project. 
+This examples initializes the first detected camera and sets up for software triggering. A single frame is requested and the recieved image is displayed with OpenCV. 
 
 ### Grab Frames Polling Continuous: 
-This example goes through common settable/gettable parameters for the cameras and prints them to console. This also shows how to interpret returns from cameras that are not compatible with certain settings. 
+This examples initializes the first detected camera and sets up for continuous capture with software triggering and framerate control. The recieved images are displayed with OpenCV
 
 ## Build Instructions
 1. If you have not done so already unzip the following folder to an accesible location on your drive. This contains the Camera SDK. 
