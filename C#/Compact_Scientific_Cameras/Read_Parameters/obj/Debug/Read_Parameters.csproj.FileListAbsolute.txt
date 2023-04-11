@@ -15,4 +15,3 @@ C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Ca
 C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Read_Parameters\bin\Debug\Thorlabs.TSI.ColorInterfaces.dll
 C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Read_Parameters\bin\Debug\Thorlabs.TSI.PolarizationInterfaces.dll
 C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Read_Parameters\obj\Debug\Read_Parameters.csproj.CopyComplete
-C:\Users\manzelmi\Documents\Tech_Github\Camera_Examples\C#\Compact_Scientific_Cameras\Read_Parameters\obj\Debug\Read_Parameters.csproj.SuggestedBindingRedirects.cache
