@@ -1,0 +1,9 @@
+C:\Users\tmetz\OneDrive - THORLABS Inc\Desktop\VS test\DCx Camera Live capture\bin\Debug\DCx Camera Live capture.exe.config
+C:\Users\tmetz\OneDrive - THORLABS Inc\Desktop\VS test\DCx Camera Live capture\bin\Debug\DCx Camera Live capture.exe
+C:\Users\tmetz\OneDrive - THORLABS Inc\Desktop\VS test\DCx Camera Live capture\bin\Debug\DCx Camera Live capture.pdb
+C:\Users\tmetz\OneDrive - THORLABS Inc\Desktop\VS test\DCx Camera Live capture\obj\Debug\DCx Camera Live capture.csproj.AssemblyReference.cache
+C:\Users\tmetz\OneDrive - THORLABS Inc\Desktop\VS test\DCx Camera Live capture\obj\Debug\DCx Camera Live capture.csproj.SuggestedBindingRedirects.cache
+C:\Users\tmetz\OneDrive - THORLABS Inc\Desktop\VS test\DCx Camera Live capture\obj\Debug\DCx Camera Live capture.csproj.CoreCompileInputs.cache
+C:\Users\tmetz\OneDrive - THORLABS Inc\Desktop\VS test\DCx Camera Live capture\obj\Debug\DCx Camera Live capture.exe
+C:\Users\tmetz\OneDrive - THORLABS Inc\Desktop\VS test\DCx Camera Live capture\obj\Debug\DCx Camera Live capture.pdb
+C:\Users\tmetz\OneDrive - THORLABS Inc\Desktop\VS test\DCx Camera Live capture\obj\Debug\DCx Camera Live capture.csproj.CopyComplete
