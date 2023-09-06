@@ -1,6 +1,7 @@
 from pyueye import ueye
 import numpy as np
 import cv2
+# simple example to open camera, set some parameters, take live video, and close the camera.
 
 def main():
     # initialize the camera.
