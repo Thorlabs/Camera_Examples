@@ -4,7 +4,11 @@ import cv2
 from thorlabs_tsi_sdk.tl_camera import TLCameraSDK, OPERATION_MODE
 
 NUM_FRAMES = 10  # adjust to the desired number of frames
-os.add_dll_directory(os.getcwd() + "\\dlls")
+os.add_dll_directory(os.getcwd() + "\\dlls\\")
+
+#Needed for working directory setup on Windows
+print(os.getcwd() + "\\dlls\\")
+os.environ['PATH'] = os.getcwd() + "\\dlls\\" + os.pathsep + os.environ['PATH']
 
 with TLCameraSDK() as sdk:
     available_cameras = sdk.discover_available_cameras()
