@@ -23,10 +23,11 @@ python.exe -m pip install thorlabs_tsi_camera_python_sdk_package.zip
  This will install the thorlabs_tsi_sdk package into your current environment. The examples assume you are using this method. 
  If you want to use the source files directly, they are included in SDK\Python Camera Toolkit\source.
 
-3. To use the examples, copy the Native DLLs from 
+3. To use the examples on a Windows OS, copy the Native DLLs from 
      * 64-Bit - \Scientific Camera Interfaces\SDK\Native Toolkit\dlls\Native_64_lib
      * 32-Bit - \Scientific Camera Interfaces\SDK\Native Toolkit\dlls\Native_32_lib
-   To your python script location. The examples check the current working directory for the dlls but this can be changed to a different path if desired. 
+
+   To a folder in your script location named __\dlls\64_lib__ for 64-bit machines and __\dlls\32_lib__ for 32-bit. This can be modified in the windows_setup.py script if you wish to change the location. 
 
 4. Additional examples and a requirements.txt file is provided with ThorCam that lists the libraries needed to run the examples (besides the thorlabs_tsi_sdk package). This is dound in \Scientific Camera Interfaces\SDK\Python Toolkit\examples and can be used with pip to install each dependency at once:
 
