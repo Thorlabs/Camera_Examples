@@ -4,22 +4,18 @@ import ctypes
 
 import clr  
 from clr import *
-from System import Array, Double, IntPtr, Random, Int64
+from System import Array, Double, IntPtr, Random, Int64, Convert
 from System.Runtime.InteropServices import Marshal
 
 clr.AddReference('Thorlabs.TSI.TLCamera')
 clr.AddReference('Thorlabs.TSI.TLCameraInterfaces')
 clr.AddReference('Thorlabs.TSI.ImageData')
-clr.AddReference('Thorlabs.TSI.ImageDataInterfaces')
 clr.AddReference('Thorlabs.TSI.ColorInterfaces')
-clr.AddReference('CameraTypeConversion')
 
 import Thorlabs.TSI.ImageData as thorlabs_tsi_imagedata
-import Thorlabs.TSI.ImageDataInterfaces 
 import Thorlabs.TSI.TLCamera as thorlabs_tsi_tlcamera
 import Thorlabs.TSI.TLCameraInterfaces as thorlabs_tsi_tlcamerainterfaces
 import Thorlabs.TSI.ColorInterfaces as thorlabs_tsi_colorinterfaces
-from CameraTypeConversion import Converter
 
 TLCameraSDK = thorlabs_tsi_tlcamera.TLCameraSDK
 ImageDataUShort1D = thorlabs_tsi_imagedata.ImageDataUShort1D
@@ -256,9 +252,7 @@ class TL_Camera(object):
         if frame is None:
             raise ValueError("frame_to_array called with no frame")
         try:
-            image_data = frame.ImageData
-            image_data_ushort = Converter.ConvertFrameImageData(image_data)           
-            image = image_data_ushort.ImageData_monoOrBGR
+            image = Convert.ChangeType(frame.ImageData, thorlabs_tsi_imagedata.ImageDataUShort1D).ImageData_monoOrBGR
 
             """
             image_handle = GCHandle.Alloc(image, GCHandleType.Pinned)
@@ -269,11 +263,7 @@ class TL_Camera(object):
             """
 
             ret_array = np.zeros(len(image), dtype=ctypes.c_uint16)
-
-            for i in range(len(image)):
-                ret_array[i] = image[i]
-
-            #Marshal.Copy(image, 0, IntPtr.__overloads__[Int64](ret_array.__array_interface__['data'][0]), len(image)) # .NET method that copies image ( a System.UInt16[] type ) memory to ret_array ( an np array dtype = uint16 ) 'data' memory
+            Marshal.Copy(image, 0, IntPtr(ret_array.__array_interface__['data'][0]), len(image)) # .NET method that copies image ( a System.UInt16[] type ) memory to ret_array ( an np array dtype = uint16 ) 'data' memory
             ret_array = ret_array.reshape(frame.get_ImageData().get_Height_pixels(), frame.get_ImageData().get_Width_pixels())
             return ret_array
         except IndexError as ie:
