@@ -1,0 +1,104 @@
+# This Makefile builds the C\C++ example programs using gcc
+
+CAMERA_HEADERS = ./include/tl_camera_sdk.h ./load_dll_helpers/tl_camera_sdk_load.h
+COLOR_HEADERS = ./include/tl_mono_to_color_processing.h ./include/tl_mono_to_color_enum.h ./load_dll_helpers/tl_mono_to_color_processing_load.h 
+ADVANCED_COLOR_HEADERS = ./include/tl_color_processing.h ./include/tl_color_LUT.h ./include/tl_color_enum.h ./include/tl_color_demosaic.h ./load_dll_helpers/tl_color_processing_load.h ./load_dll_helpers/tl_color_demosaic_load.h ./load_dll_helpers/tl_color_processing_load.h
+POLAR_HEADERS = ./include/tl_polarization_processor.h ./include/tl_polarization_processor_enums.h ./include/tl_polarization_processor_error.h ./load_dll_helpers/tl_polarization_processor_load.h
+INCLUDE = -I./include -I./load_dll_helpers
+OBJ_DIR = ./obj/
+
+
+#default: all
+
+all: Polling_Mono Callback_Mono Polling_Color Callback_Color Polling_AdvancedColor Callback_AdvancedColor Polling_Polar 
+
+
+# targets for subsets of the examples
+
+Polling: Polling_Mono Polling_Color Polling_AdvancedColor Polling_Polar
+
+Callback: Callback_Mono Callback_Color Callback_AdvancedColor
+
+Mono: Polling_Mono Callback_Mono
+
+Color: Polling_Color Callback_Color
+
+Advanced_Color: Polling_AdvancedColor Callback_AdvancedColor
+
+Polar: Polling_Polar
+
+
+# targets for each individual example
+
+Polling_Mono: $(OBJ_DIR)Example_C_Camera_Interface_Polling_Mono.o $(OBJ_DIR)tl_camera_sdk_load.o
+	gcc -o Example_C_Camera_Interface_Polling_Mono $(OBJ_DIR)Example_C_Camera_Interface_Polling_Mono.o $(OBJ_DIR)tl_camera_sdk_load.o -Wl,--no-as-needed -ldl
+
+Callback_Mono: $(OBJ_DIR)Example_C_Camera_Interface_Callback_Mono.o $(OBJ_DIR)tl_camera_sdk_load.o
+	gcc -o Example_C_Camera_Interface_Callback_Mono $(OBJ_DIR)Example_C_Camera_Interface_Callback_Mono.o $(OBJ_DIR)tl_camera_sdk_load.o -pthread -Wl,--no-as-needed -ldl
+
+Polling_Color: $(OBJ_DIR)Example_C_Camera_Interface_Polling_Color.o $(OBJ_DIR)tl_camera_sdk_load.o $(OBJ_DIR)tl_mono_to_color_processing_load.o
+	gcc -o Example_C_Camera_Interface_Polling_Color $(OBJ_DIR)Example_C_Camera_Interface_Polling_Color.o $(OBJ_DIR)tl_camera_sdk_load.o $(OBJ_DIR)tl_mono_to_color_processing_load.o -Wl,--no-as-needed -ldl
+
+Callback_Color: $(OBJ_DIR)Example_C_Camera_Interface_Callback_Color.o $(OBJ_DIR)tl_camera_sdk_load.o $(OBJ_DIR)tl_mono_to_color_processing_load.o
+	gcc -o Example_C_Camera_Interface_Callback_Color $(OBJ_DIR)Example_C_Camera_Interface_Callback_Color.o $(OBJ_DIR)tl_camera_sdk_load.o $(OBJ_DIR)tl_mono_to_color_processing_load.o -Wl,--no-as-needed -ldl
+
+Polling_AdvancedColor: $(OBJ_DIR)Example_C_Camera_Interface_Polling_AdvancedColor.o $(OBJ_DIR)tl_camera_sdk_load.o $(OBJ_DIR)tl_color_processing_load.o $(OBJ_DIR)tl_color_demosaic_load.o
+	gcc -o Example_C_Camera_Interface_Polling_AdvancedColor $(OBJ_DIR)Example_C_Camera_Interface_Polling_AdvancedColor.o $(OBJ_DIR)tl_camera_sdk_load.o $(OBJ_DIR)tl_color_processing_load.o $(OBJ_DIR)tl_color_demosaic_load.o -Wl,--no-as-needed -ldl -lm
+
+Callback_AdvancedColor: $(OBJ_DIR)Example_C_Camera_Interface_Callback_AdvancedColor.o $(OBJ_DIR)tl_camera_sdk_load.o $(OBJ_DIR)tl_color_processing_load.o $(OBJ_DIR)tl_color_demosaic_load.o
+	gcc -o Example_C_Camera_Interface_Callback_AdvancedColor $(OBJ_DIR)Example_C_Camera_Interface_Callback_AdvancedColor.o $(OBJ_DIR)tl_camera_sdk_load.o $(OBJ_DIR)tl_color_processing_load.o $(OBJ_DIR)tl_color_demosaic_load.o -pthread -Wl,--no-as-needed -ldl -lm
+
+Polling_Polar: $(OBJ_DIR)Example_C_Camera_Interface_Polling_Polar.o $(OBJ_DIR)tl_camera_sdk_load.o $(OBJ_DIR)tl_polarization_processor_load.o
+	gcc -o Example_C_Camera_Interface_Polling_Polar $(OBJ_DIR)Example_C_Camera_Interface_Polling_Polar.o $(OBJ_DIR)tl_camera_sdk_load.o $(OBJ_DIR)tl_polarization_processor_load.o -Wl,--no-as-needed -ldl
+
+
+# targets for the load files to help with integrating shared library SDK functions
+
+$(OBJ_DIR)tl_camera_sdk_load.o: $(OBJ_DIR) ./load_dll_helpers/tl_camera_sdk_load.c $(CAMERA_HEADERS)
+	gcc -c ./load_dll_helpers/tl_camera_sdk_load.c $(INCLUDE) -o $(OBJ_DIR)tl_camera_sdk_load.o
+
+$(OBJ_DIR)tl_mono_to_color_processing_load.o: $(OBJ_DIR) ./load_dll_helpers/tl_mono_to_color_processing_load.c $(CAMERA_HEADERS)
+	gcc -c ./load_dll_helpers/tl_mono_to_color_processing_load.c $(INCLUDE) -o $(OBJ_DIR)tl_mono_to_color_processing_load.o
+
+$(OBJ_DIR)tl_color_demosaic_load.o: $(OBJ_DIR) ./load_dll_helpers/tl_color_demosaic_load.c $(CAMERA_HEADERS)
+	gcc -c ./load_dll_helpers/tl_color_demosaic_load.c $(INCLUDE) -o $(OBJ_DIR)tl_color_demosaic_load.o
+
+$(OBJ_DIR)tl_color_processing_load.o: $(OBJ_DIR) ./load_dll_helpers/tl_color_processing_load.c $(CAMERA_HEADERS)
+	gcc -c ./load_dll_helpers/tl_color_processing_load.c $(INCLUDE) -o $(OBJ_DIR)tl_color_processing_load.o
+
+$(OBJ_DIR)tl_polarization_processor_load.o: $(OBJ_DIR) ./load_dll_helpers/tl_polarization_processor_load.c $(POLAR_HEADERS)
+	gcc -c ./load_dll_helpers/tl_polarization_processor_load.c $(INCLUDE) -o $(OBJ_DIR)tl_polarization_processor_load.o
+
+
+# targets for the example source code files
+
+$(OBJ_DIR)Example_C_Camera_Interface_Polling_Mono.o: $(OBJ_DIR) ./examples/Example_C_Camera_Interface_Polling_Mono.c $(CAMERA_HEADERS)
+	gcc -c ./examples/Example_C_Camera_Interface_Polling_Mono.c -o $(OBJ_DIR)Example_C_Camera_Interface_Polling_Mono.o $(INCLUDE)
+
+$(OBJ_DIR)Example_C_Camera_Interface_Callback_Mono.o: $(OBJ_DIR) ./examples/Example_C_Camera_Interface_Callback_Mono.c $(CAMERA_HEADERS) 
+	gcc -c ./examples/Example_C_Camera_Interface_Callback_Mono.c -o $(OBJ_DIR)Example_C_Camera_Interface_Callback_Mono.o $(INCLUDE)
+
+$(OBJ_DIR)Example_C_Camera_Interface_Polling_Color.o: $(OBJ_DIR) ./examples/Example_C_Camera_Interface_Polling_Color.c $(CAMERA_HEADERS) $(COLOR_HEADERS)
+	gcc -c ./examples/Example_C_Camera_Interface_Polling_Color.c -o $(OBJ_DIR)Example_C_Camera_Interface_Polling_Color.o $(INCLUDE)
+
+$(OBJ_DIR)Example_C_Camera_Interface_Callback_Color.o: $(OBJ_DIR) ./examples/Example_C_Camera_Interface_Callback_Color.c $(CAMERA_HEADERS) $(COLOR_HEADERS)
+	gcc -c ./examples/Example_C_Camera_Interface_Callback_Color.c -o $(OBJ_DIR)Example_C_Camera_Interface_Callback_Color.o $(INCLUDE)
+
+$(OBJ_DIR)Example_C_Camera_Interface_Polling_AdvancedColor.o: $(OBJ_DIR) ./examples/Example_C_Camera_Interface_Polling_AdvancedColor.c $(CAMERA_HEADERS) $(ADVANCED_COLOR_HEADERS)
+	gcc -c ./examples/Example_C_Camera_Interface_Polling_AdvancedColor.c -o $(OBJ_DIR)Example_C_Camera_Interface_Polling_AdvancedColor.o $(INCLUDE)
+
+$(OBJ_DIR)Example_C_Camera_Interface_Callback_AdvancedColor.o: $(OBJ_DIR) ./examples/Example_C_Camera_Interface_Callback_AdvancedColor.c $(CAMERA_HEADERS) $(ADVANCED_COLOR_HEADERS)
+	gcc -c ./examples/Example_C_Camera_Interface_Callback_AdvancedColor.c -o $(OBJ_DIR)Example_C_Camera_Interface_Callback_AdvancedColor.o $(INCLUDE)
+
+$(OBJ_DIR)Example_C_Camera_Interface_Polling_Polar.o: $(OBJ_DIR) ./examples/Example_C_Camera_Interface_Polling_Polar.c $(CAMERA_HEADERS) $(POLAR_HEADERS)
+	gcc -c ./examples/Example_C_Camera_Interface_Polling_Polar.c -o $(OBJ_DIR)Example_C_Camera_Interface_Polling_Polar.o $(INCLUDE)
+
+$(OBJ_DIR):
+	mkdir -p ./obj
+
+
+# cleanup
+
+clean:
+	-rm -f Example_C_Camera_Interface_*
+	-rm tl_*_load.o
