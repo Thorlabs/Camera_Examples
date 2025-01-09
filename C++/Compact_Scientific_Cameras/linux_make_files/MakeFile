@@ -1,3 +1,9 @@
+#This is a makefile for building the Read_Parameters and Hardware_Triggering examples
+#The folder should be setup with this make file in the top level directory 
+#Directories titled "include", "examples", and "load_dll_helpers" should be created alongside the makefile. These should contain the files from the linux installation in \Scientific_Camera_Interfaces\SDK\Native_Toolkit\
+#The examples to build should be copied to the "examples folder"
+#To build the examples, open a terminal in the makefile location and run the command "make"
+
 CAMERA_HEADERS = ./include/tl_camera_sdk.h ./load_dll_helpers/tl_camera_sdk_load.h
 COLOR_HEADERS = ./include/tl_mono_to_color_processing.h ./include/tl_mono_to_color_enum.h ./load_dll_helpers/tl_mono_to_color_processing_load.h 
 ADVANCED_COLOR_HEADERS = ./include/tl_color_processing.h ./include/tl_color_LUT.h ./include/tl_color_enum.h ./include/tl_color_demosaic.h ./load_dll_helpers/tl_color_processing_load.h ./load_dll_helpers/tl_color_demosaic_load.h ./load_dll_helpers/tl_color_processing_load.h
@@ -6,6 +12,7 @@ INCLUDE = -I./include -I./load_dll_helpers
 OBJ_DIR = ./obj/
 
 # targets for examples
+all: Read_Parameters Hardware_Triggering
 
 Read_Parameters: $(OBJ_DIR)Read_Parameters.o $(OBJ_DIR)tl_camera_sdk_load.o
 	g++ -o Read_Parameters $(OBJ_DIR)Read_Parameters.o $(OBJ_DIR)tl_camera_sdk_load.o -Wl,--no-as-needed -ldl
@@ -16,26 +23,26 @@ Hardware_Triggering: $(OBJ_DIR)Hardware_Triggering.o $(OBJ_DIR)tl_camera_sdk_loa
 # targets for the load files to help with integrating shared library SDK functions
 
 $(OBJ_DIR)tl_camera_sdk_load.o: $(OBJ_DIR) ./load_dll_helpers/tl_camera_sdk_load.c $(CAMERA_HEADERS)
-	g++ -c ./load_dll_helpers/tl_camera_sdk_load.c $(INCLUDE) -o $(OBJ_DIR)tl_camera_sdk_load.o
+	gcc -c ./load_dll_helpers/tl_camera_sdk_load.c $(INCLUDE) -o $(OBJ_DIR)tl_camera_sdk_load.o
 
 $(OBJ_DIR)tl_mono_to_color_processing_load.o: $(OBJ_DIR) ./load_dll_helpers/tl_mono_to_color_processing_load.c $(CAMERA_HEADERS)
-	g++ -c ./load_dll_helpers/tl_mono_to_color_processing_load.c $(INCLUDE) -o $(OBJ_DIR)tl_mono_to_color_processing_load.o
+	gcc -c ./load_dll_helpers/tl_mono_to_color_processing_load.c $(INCLUDE) -o $(OBJ_DIR)tl_mono_to_color_processing_load.o
 
 $(OBJ_DIR)tl_color_demosaic_load.o: $(OBJ_DIR) ./load_dll_helpers/tl_color_demosaic_load.c $(CAMERA_HEADERS)
-	g++ -c ./load_dll_helpers/tl_color_demosaic_load.c $(INCLUDE) -o $(OBJ_DIR)tl_color_demosaic_load.o
+	gcc -c ./load_dll_helpers/tl_color_demosaic_load.c $(INCLUDE) -o $(OBJ_DIR)tl_color_demosaic_load.o
 
 $(OBJ_DIR)tl_color_processing_load.o: $(OBJ_DIR) ./load_dll_helpers/tl_color_processing_load.c $(CAMERA_HEADERS)
-	g++ -c ./load_dll_helpers/tl_color_processing_load.c $(INCLUDE) -o $(OBJ_DIR)tl_color_processing_load.o
+	gcc -c ./load_dll_helpers/tl_color_processing_load.c $(INCLUDE) -o $(OBJ_DIR)tl_color_processing_load.o
 
 $(OBJ_DIR)tl_polarization_processor_load.o: $(OBJ_DIR) ./load_dll_helpers/tl_polarization_processor_load.c $(POLAR_HEADERS)
-	g++ -c ./load_dll_helpers/tl_polarization_processor_load.c $(INCLUDE) -o $(OBJ_DIR)tl_polarization_processor_load.o
+	gcc -c ./load_dll_helpers/tl_polarization_processor_load.c $(INCLUDE) -o $(OBJ_DIR)tl_polarization_processor_load.o
 
 # targets for the example source code files
-$(OBJ_DIR)Read_Parameters.o: $(OBJ_DIR) ./examples/Read_Parameters.c $(CAMERA_HEADERS)
-	g++ -c ./examples/Read_Parameters.c -o $(OBJ_DIR)Read_Parameters.o $(INCLUDE)
+$(OBJ_DIR)Read_Parameters.o: $(OBJ_DIR) ./examples/Read_Parameters.cpp $(CAMERA_HEADERS)
+	gcc -c ./examples/Read_Parameters.cpp -o $(OBJ_DIR)Read_Parameters.o $(INCLUDE)
 
-$(OBJ_DIR)Hardware_Triggering.o: $(OBJ_DIR) ./examples/Hardware_Triggering.c $(CAMERA_HEADERS) 
-	g++ -c ./examples/Hardware_Triggering.c -o $(OBJ_DIR)Hardware_Triggering.o $(INCLUDE)
+$(OBJ_DIR)Hardware_Triggering.o: $(OBJ_DIR) ./examples/Hardware_Triggering.cpp $(CAMERA_HEADERS) 
+	gcc -c ./examples/Hardware_Triggering.cpp -o $(OBJ_DIR)Hardware_Triggering.o $(INCLUDE)
 
 $(OBJ_DIR):
 	mkdir -p ./obj
