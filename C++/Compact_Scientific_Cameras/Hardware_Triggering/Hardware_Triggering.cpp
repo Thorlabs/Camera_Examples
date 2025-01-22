@@ -4,10 +4,11 @@
 #include <iostream>
 #include <string.h>
 #include <stdlib.h>
-#include <windows.h>
 #include "tl_camera_sdk.h"
 #include "tl_camera_sdk_load.h"
-
+#ifdef __linux__
+  #include <unistd.h>
+#endif
 int is_camera_sdk_open = 0;
 int is_camera_dll_open = 0;
 void* camera_handle = 0;
@@ -74,7 +75,11 @@ int main()
         if (!image_buffer)
         {
             //A small sleep is used to prevent too many calls to the camera. 
+#ifdef _WIN32
             Sleep(50);
+#elif defined __linux__
+            usleep(50000);
+#endif
             continue; //Timeout case. Skip this loop iteration
         }
 
@@ -129,7 +134,11 @@ int initialize_camera_resources()
     char first_camera[256];
 
     // Copy the ID of the first camera to separate buffer (for clarity)
+#ifdef _WIN32
     strcpy_s(first_camera, 256, camera_ids);
+#elif defined __linux__
+    strcpy(first_camera, camera_ids);
+#endif
     std::cout << "ID of First Camera: " << first_camera << "\n";
 
     // Connect to the camera(get a handle to it).
