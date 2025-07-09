@@ -6,6 +6,9 @@ This examples initializes the first detected camera and sets up for software tri
 ### Grab Frames Polling Continuous: 
 This examples initializes the first detected camera and sets up for continuous capture with software triggering and framerate control. The recieved images are displayed with OpenCV
 
+### OpenCV MP4 Writer:
+This example saves images from a Thorlabs camera as an MP4 video file.
+
 ## Build Instructions
 1. If you have not done so already unzip the following folder to an accesible location on your drive. This contains the Camera SDK. 
 
