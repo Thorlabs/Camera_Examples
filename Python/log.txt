@@ -1,0 +1,12 @@
+Exception ignored in atexit callback <bound method Gcf.destroy_all of <classException ignored in atexit callback <bound method Gcf.destroy_all of <class 'matplotlib._pylab_helpers.Gcf'>>:
+ 'matplotlib._pylab_helpers.Gcf'>>:
+ 'matplotlib._pylab_helpers.Gcf'>>:
+ 'matplotlib._pylab_helpers.Gcf'>>:
+Traceback (most recent call last):
+  File "C:\Users\user\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\matplotlib\_pylab_helpers.py", line 81, in destroy_all
+    manager.destroy()
+  File "C:\Users\user\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\matplotlib\backends\_backend_tk.py", line 590, in destroy
+    self._window_dpi.trace_remove('write', self._window_dpi_cbname)
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.2032.0_x64__qbz5n2kfra8p0\Lib\tkinter\__init__.py", line 474, in trace_remove
+    self._tk.call('trace', 'remove', 'variable',
+RuntimeError: main thread is not in main loop
