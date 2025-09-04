@@ -132,6 +132,9 @@ def camera_producer():
             print("카메라 ARM: 하드웨어 트리거 대기 중")
             camera_ready = True  # 카메라 준비 완료
 
+            last_report = time.time()
+            last_frames_local = 0
+
             try:
                 while True:
                     with capture_lock:
@@ -153,9 +156,15 @@ def camera_producer():
                         frame_queue.put((frame.frame_count, roi))
                         with capture_lock:
                             frames_captured += 1
+                        last_frames_local = frames_captured
+                        last_report = time.time()
                         # 디버깅: 매 1000프레임마다 진행상황 출력
                         if frames_captured % 1000 == 0:
                             print(f"DEBUG: 현재까지 {frames_captured} 프레임 수집됨")
+                    # 외부 트리거 대기 상태 감시: 일정 시간 프레임이 없으면 안내 로그
+                    if time.time() - last_report > 2.0 and frames_captured == last_frames_local:
+                        print("WAIT: 아직 수신 프레임 없음 (외부 트리거 대기 중). 트리거 케이블/극성/레벨을 확인하세요.")
+                        last_report = time.time()
                     # 프레임 번호 및 현재까지 수집된 프레임 정보 출력
                     # 삭제됨: print(f"프레임 #{frame.frame_count} 저장 (총 {frames_captured}/{n_frames})")
             except KeyboardInterrupt:
@@ -176,6 +185,9 @@ def camera_consumer():
     # 주파수별 intensity 누적 (평균/라이브 플롯용)
     intensity_dict = defaultdict(list)
     processed_frames = 0
+
+    if PRINT_PER_FRAME:
+        print("Consumer 시작: 프레임-주파수 매핑 및 워밍업 스킵 동작 준비")
 
     # 초기 워밍업 프레임: 정확한 주파수-프레임 정렬을 위해 한 사이클(= mw_steps) 건너뜀
     warmup_skip = mw_steps
@@ -208,11 +220,16 @@ def camera_consumer():
 
             # 워밍업 프레임 건너뜀 (주파수 경계 정렬)
             if seen <= warmup_skip:
+                if PRINT_PER_FRAME:
+                    print(f"#{int(frame_num)} warmup-skip {seen}/{warmup_skip}")
                 continue
 
             # MW 주파수 계산 (로컬 카운터 기반)
             step_index = (seen - warmup_skip - 1) % mw_steps
             freq = mw_start + step_index * mw_step  # Hz
+
+            if PRINT_PER_FRAME:
+                print(f"#{int(frame_num)} freq={freq/1e9:.3f} GHz (step {step_index+1}/{mw_steps})")
 
             # HDF5 초기화
             if SAVE_HDF5 and HAS_H5PY and h5 is None:
@@ -272,10 +289,6 @@ def camera_consumer():
             s = roi.astype(np.uint32).sum()
             intensity_dict[freq].append(int(s))
             processed_frames += 1
-
-            # 프레임당 1회 로그 (요청 포맷)
-            if PRINT_PER_FRAME:
-                print(f"#{int(frame_num)} freq={freq/1e9:.3f} GHz")
 
             # 스윕 1회 완료 시 간이 라이브 ODMR 업데이트
             if LIVE_ODMR and ((seen - warmup_skip) % mw_steps == 0):
