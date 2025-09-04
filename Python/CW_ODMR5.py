@@ -58,6 +58,7 @@ LIVE_ODMR = True            # 스윕 1회마다 라이브 평균 ODMR 플롯 업
 # 카메라 프레임 데이터와 intensity 데이터 저장용 자료구조
 # 프레임 큐: 이미지 전체를 저장하지 않고 (frame_count, roi_total_intensity)만 저장하여 메모리 사용 최소화
 frame_queue = queue.Queue(maxsize=512)
+plot_queue = queue.Queue(maxsize=16)  # 라이브 플롯 업데이트용 (메인 스레드에서만 그림)
 intensity_dict = {}  # key: MW 주파수 (Hz), value: list of ROI 총 intensity 값
 
 # 전역 변수 및 동기화를 위한 변수
@@ -208,14 +209,6 @@ def camera_consumer():
     d_roi = d_frame = d_freq = None
     h5_index = 0
 
-    # 라이브 플롯
-    live_fig = live_ax = line = None
-    if LIVE_ODMR:
-        try:
-            plt.ion()
-        except Exception:
-            pass
-
     # 카메라 프레임카운트에 의존하지 않도록 로컬 카운터 사용
     seen = 0
 
@@ -300,26 +293,23 @@ def camera_consumer():
             intensity_dict[freq].append(int(s))
             processed_frames += 1
 
-            # 스윕 1회 완료 시 간이 라이브 ODMR 업데이트
+            # 스윕 1회 완료 시 메인스레드 플로터로 데이터 전달
             if LIVE_ODMR and ((seen - warmup_skip) % mw_steps == 0):
                 try:
                     freqs_sorted = sorted(intensity_dict.keys())
-                    y = [np.mean(intensity_dict[f]) for f in freqs_sorted]
-                    x = [f / 1e9 for f in freqs_sorted]
-                    if live_fig is None:
-                        live_fig, live_ax = plt.subplots()
-                        line, = live_ax.plot(x, y, marker='o')
-                        live_ax.set_xlabel("Frequency (GHz)")
-                        live_ax.set_ylabel("Intensity (a.u.)")
-                        live_ax.set_title("Live CW-ODMR (avg per freq)")
-                    else:
-                        line.set_xdata(x)
-                        line.set_ydata(y)
-                        live_ax.relim()
-                        live_ax.autoscale_view()
-                    plt.pause(0.001)
+                    y = np.array([np.mean(intensity_dict[f]) for f in freqs_sorted])
+                    x = np.array([f / 1e9 for f in freqs_sorted])
+                    pl_norm = y / y.max()
+                    I_off = y[y >= np.quantile(y, 0.80)].mean()
+                    contrast_pct = (I_off - y) / I_off * 100.0
+                    # 최신 데이터만 유지 (큐가 가득 차면 가장 오래된 항목 버림)
+                    while not plot_queue.empty():
+                        try:
+                            plot_queue.get_nowait()
+                        except Exception:
+                            break
+                    plot_queue.put_nowait((x, pl_norm, contrast_pct))
                 except Exception:
-                    # 디스플레이 불가 환경 등에서는 조용히 비활성화
                     pass
 
         except queue.Empty:
@@ -334,6 +324,56 @@ def camera_consumer():
     except Exception:
         pass
 
+def plotter_mainloop():
+    if not LIVE_ODMR:
+        return
+    fig = None
+    ax_pl = ax_con = line_pl = line_con = None
+    import matplotlib
+    try:
+        # GUI 백엔드 사용 (Windows에서 TkAgg 기본). 모든 plt 호출은 메인 스레드에서만.
+        matplotlib.rcParams["toolbar"] = "toolmanager"
+    except Exception:
+        pass
+    try:
+        plt.ion()
+    except Exception:
+        pass
+    last_update = time.time()
+    while True:
+        try:
+            x, pl_norm, contrast_pct = plot_queue.get(timeout=0.2)
+            if fig is None:
+                fig, (ax_pl, ax_con) = plt.subplots(2, 1, sharex=True)
+                line_pl, = ax_pl.plot(x, pl_norm, marker='o')
+                line_con, = ax_con.plot(x, contrast_pct, marker='o')
+                ax_pl.set_ylabel("PL (norm.)")
+                ax_con.set_ylabel("Contrast (%)")
+                ax_con.set_xlabel("Frequency (GHz)")
+                ax_pl.set_title("Live CW-ODMR")
+            else:
+                line_pl.set_xdata(x); line_pl.set_ydata(pl_norm)
+                line_con.set_xdata(x); line_con.set_ydata(contrast_pct)
+                ax_pl.relim(); ax_pl.autoscale_view()
+                ax_con.relim(); ax_con.autoscale_view()
+            plt.pause(0.001)
+            last_update = time.time()
+        except queue.Empty:
+            # 종료 조건: 측정 완료 이후 일정 시간동안 업데이트 없으면 종료
+            if measurement_complete and (time.time() - last_update) > 0.5:
+                break
+            continue
+    try:
+        plt.ioff()
+        plt.show(block=False)
+        plt.pause(0.001)
+    except Exception:
+        pass
+    try:
+        plt.close('all')
+    except Exception:
+        pass
+
 # -----------------------------------------
 # 쓰레드 시작 및 데이터 수집 완료
 # -----------------------------------------
@@ -344,6 +384,9 @@ consumer_thread = threading.Thread(target=camera_consumer, daemon=True)
 sdg_thread.start()
 producer_thread.start()
 consumer_thread.start()
+
+# 라이브 플롯은 메인 스레드에서만 처리 (Tkinter 예외 방지)
+plotter_mainloop()
 
 producer_thread.join()
 consumer_thread.join()
