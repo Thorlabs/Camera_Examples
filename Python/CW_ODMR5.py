@@ -68,11 +68,11 @@ def sdg_control():
         sdg.write("*RST")
         time.sleep(0.1)
         sdg.write("C1:BSWV WVTP,PULSE")   # 펄스 모드 선택
-        sdg.write("C1:BSWV FRQ,25")         # 25Hz 펄스 → 40ms 주기
+        sdg.write("C1:BSWV FRQ,250")         # 250Hz 펄스 → 4ms 주기
         sdg.write("C1:BSWV AMP,2")
         sdg.write("C1:BSWV OFST,1")
         # 노트: 2e-6 = 2 µs (실험 명세에 맞춤)
-        sdg.write("C1:BSWV WIDTH,2e-6")      # 펄스 폭 2µs
+        sdg.write("C1:BSWV WIDTH,2e-5")      # 펄스 폭 20µs
     except Exception as e:
         print("SDG 초기 설정 오류:", e)
         return
@@ -108,7 +108,7 @@ def camera_producer():
             print("카메라가 감지되지 않았습니다.")
             return
         with sdk.open_camera(available_cameras[0]) as camera:
-            camera.exposure_time_us = 20000  # 20 ms 노출
+            camera.exposure_time_us = 1.5  # 1.5 ms 노출
             camera.frames_per_trigger_zero_for_unlimited = 1
             camera.image_poll_timeout_ms = 1000
             # 하드웨어 트리거 사용 시 내부 프레임레이트 제어는 비활성화
