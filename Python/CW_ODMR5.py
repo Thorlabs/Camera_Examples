@@ -14,6 +14,7 @@ except Exception:
 from collections import defaultdict
 import pyvisa
 from thorlabs_tsi_sdk.tl_camera import TLCameraSDK, OPERATION_MODE
+from thorlabs_tsi_sdk.tl_camera_enums import TRIGGER_POLARITY
 
 try:
     # if on Windows, use the provided setup script to add the DLLs folder to the PATH
@@ -81,10 +82,11 @@ def sdg_control():
         time.sleep(0.1)
         sdg.write("C1:BSWV WVTP,PULSE")   # 펄스 모드 선택
         sdg.write("C1:BSWV FRQ,250")         # 250Hz 펄스 → 4ms 주기
-        sdg.write("C1:BSWV AMP,2")
-        sdg.write("C1:BSWV OFST,1")
-        # 노트: 2e-6 = 2 µs (실험 명세에 맞춤)
-        sdg.write("C1:BSWV WIDTH,2e-5")      # 펄스 폭 20µs
+        sdg.write("C1:OUTP LOAD,HZ")
+        sdg.write("C1:BSWV AMP,3.3")      # 3.3 Vpp (LVTTL range)
+        sdg.write("C1:BSWV OFST,1.65")    # 0–3.3 V level (centered)
+        # LVTTL 신호 및 200µs 최소 펄스 폭 권고에 맞춤
+        sdg.write("C1:BSWV WIDTH,2e-4")   # 200 µs pulse width (>= 100 µs min)
     except Exception as e:
         print("SDG 초기 설정 오류:", e)
         return
@@ -120,13 +122,21 @@ def camera_producer():
             print("카메라가 감지되지 않았습니다.")
             return
         with sdk.open_camera(available_cameras[0]) as camera:
+            # 하드웨어 트리거: Rising edge(LOW→HIGH)로 명시 (SDK Enum 사용)
+            try:
+                camera.operation_mode = OPERATION_MODE.HARDWARE_TRIGGERED
+                camera.frames_per_trigger_zero_for_unlimited = 1
+                # TRIGGER_POLARITY.ACTIVE_HIGH = rising edge
+                camera.trigger_polarity = TRIGGER_POLARITY.ACTIVE_HIGH
+            except Exception as e:
+                print(f"트리거 모드/극성 설정 실패: {e}")
+
             camera.exposure_time_us = 1500  # 1.5 ms 노출 (단위: 마이크로초)
             camera.frames_per_trigger_zero_for_unlimited = 1
             camera.image_poll_timeout_ms = 1000
             # 하드웨어 트리거 사용 시 내부 프레임레이트 제어는 비활성화
             camera.is_frame_rate_control_enabled = False
 
-            camera.operation_mode = OPERATION_MODE.HARDWARE_TRIGGERED
             # 하드웨어 트리거 수신을 위해 충분한 내부 버퍼 확보 (드롭 방지)
             camera.arm(200)
             print("카메라 ARM: 하드웨어 트리거 대기 중")
