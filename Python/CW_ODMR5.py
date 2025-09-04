@@ -6,6 +6,12 @@ import matplotlib.pyplot as plt
 import datetime
 import glob
 import os
+try:
+    import h5py
+    HAS_H5PY = True
+except Exception:
+    HAS_H5PY = False
+from collections import defaultdict
 import pyvisa
 from thorlabs_tsi_sdk.tl_camera import TLCameraSDK, OPERATION_MODE
 
@@ -42,9 +48,15 @@ for i in range(mw_steps):
     os.makedirs(folder_path, exist_ok=True)
     freq_paths.append(folder_path)
 
+# 런타임 플래그
+PRINT_PER_FRAME = True      # 프레임당 1회 로그 출력 (프레임 번호 + 주파수)
+SAVE_TXT = False            # 주파수 폴더별 .txt 저장 (비권장: 파일 수 많음)
+SAVE_HDF5 = True            # HDF5에 ROI/메타데이터 스트리밍 저장
+LIVE_ODMR = True            # 스윕 1회마다 라이브 평균 ODMR 플롯 업데이트
+
 # 카메라 프레임 데이터와 intensity 데이터 저장용 자료구조
 # 프레임 큐: 이미지 전체를 저장하지 않고 (frame_count, roi_total_intensity)만 저장하여 메모리 사용 최소화
-frame_queue = queue.Queue(maxsize=n_frames)
+frame_queue = queue.Queue(maxsize=512)
 intensity_dict = {}  # key: MW 주파수 (Hz), value: list of ROI 총 intensity 값
 
 # 전역 변수 및 동기화를 위한 변수
@@ -108,7 +120,7 @@ def camera_producer():
             print("카메라가 감지되지 않았습니다.")
             return
         with sdk.open_camera(available_cameras[0]) as camera:
-            camera.exposure_time_us = 1.5  # 1.5 ms 노출
+            camera.exposure_time_us = 1500  # 1.5 ms 노출 (단위: 마이크로초)
             camera.frames_per_trigger_zero_for_unlimited = 1
             camera.image_poll_timeout_ms = 1000
             # 하드웨어 트리거 사용 시 내부 프레임레이트 제어는 비활성화
@@ -116,7 +128,7 @@ def camera_producer():
 
             camera.operation_mode = OPERATION_MODE.HARDWARE_TRIGGERED
             # 하드웨어 트리거 수신을 위해 충분한 내부 버퍼 확보 (드롭 방지)
-            camera.arm(10)
+            camera.arm(200)
             print("카메라 ARM: 하드웨어 트리거 대기 중")
             camera_ready = True  # 카메라 준비 완료
 
@@ -144,8 +156,8 @@ def camera_producer():
                         # 디버깅: 매 1000프레임마다 진행상황 출력
                         if frames_captured % 1000 == 0:
                             print(f"DEBUG: 현재까지 {frames_captured} 프레임 수집됨")
-                        # 프레임 번호 및 현재까지 수집된 프레임 정보 출력
-                        print(f"프레임 #{frame.frame_count} 저장 (총 {frames_captured}/{n_frames})")
+                    # 프레임 번호 및 현재까지 수집된 프레임 정보 출력
+                    # 삭제됨: print(f"프레임 #{frame.frame_count} 저장 (총 {frames_captured}/{n_frames})")
             except KeyboardInterrupt:
                 print("카메라 Producer 종료 (KeyboardInterrupt)")
             finally:
@@ -161,43 +173,143 @@ def camera_producer():
 # -----------------------------------------
 def camera_consumer():
     global measurement_complete, intensity_dict
-    intensity_dict = {}
+    # 주파수별 intensity 누적 (평균/라이브 플롯용)
+    intensity_dict = defaultdict(list)
     processed_frames = 0
+
     # 초기 워밍업 프레임: 정확한 주파수-프레임 정렬을 위해 한 사이클(= mw_steps) 건너뜀
     warmup_skip = mw_steps
     target_frames = n_frames - warmup_skip
+
+    # HDF5 지연 초기화 (첫 유효 ROI 크기 파악 후 생성)
+    h5 = None
+    d_roi = d_frame = d_freq = None
+    h5_index = 0
+
+    # 라이브 플롯
+    live_fig = live_ax = line = None
+    if LIVE_ODMR:
+        try:
+            plt.ion()
+        except Exception:
+            pass
+
+    # 카메라 프레임카운트에 의존하지 않도록 로컬 카운터 사용
+    seen = 0
+
     while processed_frames < target_frames:
         try:
             frame_num, roi = frame_queue.get(timeout=0.5)
             # 종료 신호 처리
             if frame_num is None:
                 break
+
+            seen += 1
+
             # 워밍업 프레임 건너뜀 (주파수 경계 정렬)
-            if frame_num <= warmup_skip:
+            if seen <= warmup_skip:
                 continue
-            # MW 주파수 계산 및 폴더 선택
-            step_index = (frame_num - 1) % mw_steps
+
+            # MW 주파수 계산 (로컬 카운터 기반)
+            step_index = (seen - warmup_skip - 1) % mw_steps
             freq = mw_start + step_index * mw_step  # Hz
-            # 파일명 생성 후 해당 주파수 폴더에 저장
-            freq_mhz = int(round(freq / 1e6))
-            filename = f"roi_frame_{frame_num:06d}_f{freq_mhz:04d}MHz.txt"
-            filepath = os.path.join(freq_paths[step_index], filename)
-            try:
-                np.savetxt(filepath, roi.astype(np.uint16), fmt='%d')
-            except Exception as e:
-                print(f"ROI 저장 실패 (frame {frame_num}): {e}")
-            if freq in intensity_dict:
-                intensity_dict[freq].append(np.sum(roi))
-            else:
-                intensity_dict[freq] = [np.sum(roi)]
+
+            # HDF5 초기화
+            if SAVE_HDF5 and HAS_H5PY and h5 is None:
+                try:
+                    h5_path = os.path.join(run_dir, "data.h5")
+                    h5 = h5py.File(h5_path, "w")
+                    h, w = roi.shape
+                    d_roi = h5.create_dataset(
+                        "roi",
+                        shape=(0, h, w),
+                        maxshape=(None, h, w),
+                        dtype=np.uint16,
+                        chunks=(1, h, w),
+                        compression="gzip",
+                    )
+                    d_frame = h5.create_dataset(
+                        "frame_num",
+                        shape=(0,),
+                        maxshape=(None,),
+                        dtype=np.int64,
+                        chunks=True,
+                        compression="gzip",
+                    )
+                    d_freq = h5.create_dataset(
+                        "freq_hz",
+                        shape=(0,),
+                        maxshape=(None,),
+                        dtype=np.float64,
+                        chunks=True,
+                        compression="gzip",
+                    )
+                except Exception as e:
+                    print(f"HDF5 초기화 실패: {e}")
+
+            # ROI 저장 (HDF5 우선, 실패 시 옵션에 따라 .txt)
+            if SAVE_HDF5 and HAS_H5PY and h5 is not None:
+                try:
+                    d_roi.resize((h5_index + 1, d_roi.shape[1], d_roi.shape[2]))
+                    d_roi[h5_index, :, :] = roi.astype(np.uint16)
+                    d_frame.resize((h5_index + 1,))
+                    d_frame[h5_index] = int(frame_num)
+                    d_freq.resize((h5_index + 1,))
+                    d_freq[h5_index] = float(freq)
+                    h5_index += 1
+                except Exception as e:
+                    print(f"HDF5 저장 실패 (frame {frame_num}): {e}")
+            elif SAVE_TXT:
+                try:
+                    freq_mhz = int(round(freq / 1e6))
+                    filename = f"roi_frame_{int(frame_num):06d}_f{freq_mhz:04d}MHz.txt"
+                    filepath = os.path.join(freq_paths[step_index], filename)
+                    np.savetxt(filepath, roi.astype(np.uint16), fmt='%d')
+                except Exception as e:
+                    print(f"ROI 저장 실패 (frame {frame_num}): {e}")
+
+            # 총 intensity 합 (오버플로 방지)
+            s = roi.astype(np.uint32).sum()
+            intensity_dict[freq].append(int(s))
             processed_frames += 1
-            # 디버깅: 각 500프레임마다 데이터 수 확인
-            if processed_frames % 500 == 0:
-                print(f"DEBUG: 소비된 프레임 수 {processed_frames}, 현재 intensity_dict의 항목 수: {len(intensity_dict)}")
-            print(f"프레임 #{frame_num} 처리: MW freq = {freq/1e9:.3f} GHz, ROI 총 intensity = {int(np.sum(roi))}")
+
+            # 프레임당 1회 로그 (요청 포맷)
+            if PRINT_PER_FRAME:
+                print(f"#{int(frame_num)} freq={freq/1e9:.3f} GHz")
+
+            # 스윕 1회 완료 시 간이 라이브 ODMR 업데이트
+            if LIVE_ODMR and ((seen - warmup_skip) % mw_steps == 0):
+                try:
+                    freqs_sorted = sorted(intensity_dict.keys())
+                    y = [np.mean(intensity_dict[f]) for f in freqs_sorted]
+                    x = [f / 1e9 for f in freqs_sorted]
+                    if live_fig is None:
+                        live_fig, live_ax = plt.subplots()
+                        line, = live_ax.plot(x, y, marker='o')
+                        live_ax.set_xlabel("Frequency (GHz)")
+                        live_ax.set_ylabel("Intensity (a.u.)")
+                        live_ax.set_title("Live CW-ODMR (avg per freq)")
+                    else:
+                        line.set_xdata(x)
+                        line.set_ydata(y)
+                        live_ax.relim()
+                        live_ax.autoscale_view()
+                    plt.pause(0.001)
+                except Exception:
+                    # 디스플레이 불가 환경 등에서는 조용히 비활성화
+                    pass
+
         except queue.Empty:
             continue
+
     measurement_complete = True
+
+    # HDF5 정리
+    try:
+        if SAVE_HDF5 and HAS_H5PY and h5 is not None:
+            h5.close()
+    except Exception:
+        pass
 
 # -----------------------------------------
 # 쓰레드 시작 및 데이터 수집 완료
