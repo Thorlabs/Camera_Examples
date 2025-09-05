@@ -400,4 +400,3 @@ for freq in sorted(intensity_dict.keys()):
 frequencies = sorted(intensity_dict.keys())
 avg_intensities = [np.mean(intensity_dict[freq]) for freq in frequencies]
 
-# CSV 저장 로직 제거됨: ROI 2D 배열은 개별 .txt 파일로만 저장됩니다.
