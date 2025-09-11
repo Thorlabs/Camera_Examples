@@ -249,7 +249,7 @@ def camera_consumer():
     PREROLL_SEC = 1.0
     STABLE_N = 25
     STABLE_T = 0.004     # 4 ms
-    STABLE_TOL = 0.0006  # ±0.6 ms 허용
+    STABLE_TOL = 0.0015  # (A) 진단용 임시 완화: ±1.5 ms 허용
     stable_mode = False
     stable_count = 0
     last_ts = None
@@ -287,6 +287,15 @@ def camera_consumer():
                 ts_now = ts_rel_ns * 1e-9  # ns → s
             else:
                 ts_now = time.time()
+            # --- Diagnostics (A): timestamp source check, print once ---
+            try:
+                if (processed_frames == 0):
+                    if ts_rel_ns is None:
+                        print("INFO: camera timestamp is None → using wall clock for Δt (stability tolerance relaxed to ±1.5 ms).")
+                    else:
+                        print("INFO: camera timestamp detected (ns) → using hardware Δt.")
+            except Exception:
+                pass
             if first_data_ts is None:
                 first_data_ts = ts_now
 
@@ -301,6 +310,16 @@ def camera_consumer():
                 last_ts = ts_now
                 continue
             dt = ts_now - last_ts
+            # --- Diagnostics (A): print first few Δt samples ---
+            if 'diag_dt_prints' not in locals():
+                diag_dt_prints = 0
+            if diag_dt_prints < 20:
+                try:
+                    src = "ns" if (ts_rel_ns is not None) else "wall"
+                    print(f"Δt sample[{diag_dt_prints+1}]: {dt*1e3:.3f} ms (src={src})")
+                    diag_dt_prints += 1
+                except Exception:
+                    pass
             last_ts = ts_now
             if abs(dt - STABLE_T) <= STABLE_TOL:
                 stable_count += 1
