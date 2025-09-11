@@ -485,24 +485,40 @@ def camera_consumer():
             intensity_dict[freq].append(int(s))
             processed_frames += 1
 
-            # 스윕 1회 완료 시 메인스레드 플로터로 데이터 전달
-            if LIVE_ODMR and ((seen - warmup_skip) % mw_steps == 0):
+            # 라이브 플롯 업데이트: (A) 기본은 한 사이클마다, (B) 보조로 최소 8개 주파수 모이면 즉시
+            should_push = LIVE_ODMR and ( ((seen - warmup_skip) % mw_steps == 0) or (len(intensity_dict) >= 8 and ((seen - warmup_skip) % 3 == 0)) )
+            if should_push:
                 try:
                     freqs_sorted = sorted(intensity_dict.keys())
-                    y = np.array([np.mean(intensity_dict[f]) for f in freqs_sorted])
-                    x = np.array([f / 1e9 for f in freqs_sorted])
-                    pl_norm = y / y.max()
-                    I_off = y[y >= np.quantile(y, 0.80)].mean()
-                    contrast_pct = (I_off - y) / I_off * 100.0
-                    # 최신 데이터만 유지 (큐가 가득 차면 가장 오래된 항목 버림)
-                    while not plot_queue.empty():
+                    # 방어: 유효한 주파수/데이터만 사용
+                    freqs_sorted = [f for f in freqs_sorted if len(intensity_dict[f]) > 0]
+                    if len(freqs_sorted) >= 2:
+                        y = np.array([np.mean(intensity_dict[f]) for f in freqs_sorted], dtype=float)
+                        x = np.array([f / 1e9 for f in freqs_sorted], dtype=float)
+                        # 방어: y.max()==0이면 분모 1로
+                        y_max = float(y.max()) if y.size and y.max() > 0 else 1.0
+                        pl_norm = y / y_max
+                        # 방어: I_off 계산 시 분모 0/NaN 예방
                         try:
-                            plot_queue.get_nowait()
+                            I_off_candidates = y[y >= np.quantile(y, 0.80)]
+                            I_off = float(I_off_candidates.mean()) if I_off_candidates.size else float(y.mean() if y.size else 1.0)
+                            if I_off == 0:
+                                I_off = 1.0
                         except Exception:
-                            break
-                    plot_queue.put_nowait((x, pl_norm, contrast_pct))
-                except Exception:
-                    pass
+                            I_off = 1.0
+                        contrast_pct = (I_off - y) / I_off * 100.0
+                        # 최신 데이터만 유지 (큐가 가득 차면 가장 오래된 항목 버림)
+                        while not plot_queue.empty():
+                            try:
+                                plot_queue.get_nowait()
+                            except Exception:
+                                break
+                        plot_queue.put_nowait((x, pl_norm, contrast_pct))
+                        if PRINT_PER_FRAME and ((seen - warmup_skip) % 10 == 0):
+                            print(f"PLOT push: n_freqs={len(freqs_sorted)}, x≈[{x[0]:.3f}..{x[-1]:.3f}] GHz")
+                except Exception as e:
+                    if PRINT_PER_FRAME:
+                        print(f"PLOT prepare err: {e}")
 
         except queue.Empty:
             continue
@@ -546,9 +562,14 @@ def plotter_mainloop():
             else:
                 line_pl.set_xdata(x); line_pl.set_ydata(pl_norm)
                 line_con.set_xdata(x); line_con.set_ydata(contrast_pct)
+            # 항상 리림/오토스케일 후 강제 페인트
+            try:
                 ax_pl.relim(); ax_pl.autoscale_view()
                 ax_con.relim(); ax_con.autoscale_view()
-            plt.pause(0.001)
+                fig.canvas.draw_idle()
+            except Exception:
+                pass
+            plt.pause(0.01)
             last_update = time.time()
         except queue.Empty:
             # 종료 조건: 측정 완료 이후 일정 시간동안 업데이트 없으면 종료
