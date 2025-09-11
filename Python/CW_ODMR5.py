@@ -30,9 +30,70 @@ mw_start = 3e9    # 시작 MW 주파수: 3 GHz
 mw_step = 5e7     # 주파수 스텝: 50 MHz
 mw_steps = 20     # 20 스텝 (3 GHz ~ 3.95 GHz)
 
-# ROI 영역 설정 (실험 전 카메라 해상도에 맞게 검증 필요)
+
+# ROI 영역 설정 (MANUAL 모드에서만 사용; AUTO일 때는 무시되고 중앙 고정 박스 사용)
 roi_y_start, roi_y_end = 400, 801
 roi_x_start, roi_x_end = 550, 1001
+
+# ROI 모드: 'AUTO' or 'MANUAL'
+#  - AUTO  : 카메라 프레임 중앙에 고정 박스(ROI_AUTO_SIZE x ROI_AUTO_SIZE)
+#  - MANUAL: 아래 roi_* 경계를 사용 (이미지 경계로 자동 보정)
+ROI_MODE = "AUTO"          # 실험 중에는 AUTO 권장, 필요 시 'MANUAL'로 변경
+ROI_AUTO_SIZE = 128         # AUTO 모드에서 사용할 정사각형 ROI 크기(픽셀)
+ROI_MIN_SIZE  = 8           # 어떤 경우에도 최소 보장 크기
+
+# 검증된 ROI 경계 (카메라 해상도에 맞게 런타임에 계산)
+roi_y0_valid = None
+roi_y1_valid = None
+roi_x0_valid = None
+roi_x1_valid = None
+
+def _validate_and_set_roi_bounds(img_h, img_w):
+    global roi_y0_valid, roi_y1_valid, roi_x0_valid, roi_x1_valid
+    # AUTO 모드: 중앙 고정 박스
+    if str(ROI_MODE).upper() == "AUTO":
+        box = int(max(ROI_MIN_SIZE, min(ROI_AUTO_SIZE, img_h, img_w)))
+        cy = img_h // 2
+        cx = img_w // 2
+        y0 = max(0, cy - box // 2)
+        y1 = min(img_h, y0 + box)
+        x0 = max(0, cx - box // 2)
+        x1 = min(img_w, x0 + box)
+        h = y1 - y0
+        w = x1 - x0
+        roi_y0_valid, roi_y1_valid = y0, y1
+        roi_x0_valid, roi_x1_valid = x0, x1
+        print(f"ROI 확정[AUTO]: x=[{x0},{x1}) y=[{y0},{y1}) (size={w}x{h}), img={img_w}x{img_h}")
+        return (y0, y1, x0, x1)
+
+    # MANUAL 모드: 사용자가 지정한 경계를 이미지 경계로 클램프
+    y0 = max(0, min(int(roi_y_start), img_h))
+    y1 = max(y0 + 1, min(int(roi_y_end),   img_h))
+    x0 = max(0, min(int(roi_x_start), img_w))
+    x1 = max(x0 + 1, min(int(roi_x_end),   img_w))
+    h = y1 - y0
+    w = x1 - x0
+
+    # 최소 크기 보장, 실패 시 AUTO로 폴백
+    if h < ROI_MIN_SIZE or w < ROI_MIN_SIZE:
+        print("WARN: 요청 ROI가 이미지 범위 밖/너무 작음 → AUTO 모드로 대체")
+        ROI_MODE_UP = "AUTO"  # local flag to reuse logic below
+        box = int(max(ROI_MIN_SIZE, min(ROI_AUTO_SIZE, img_h, img_w)))
+        cy = img_h // 2
+        cx = img_w // 2
+        y0 = max(0, cy - box // 2)
+        y1 = min(img_h, y0 + box)
+        x0 = max(0, cx - box // 2)
+        x1 = min(img_w, x0 + box)
+        h = y1 - y0
+        w = x1 - x0
+        print(f"ROI 확정[AUTO*]: x=[{x0},{x1}) y=[{y0},{y1}) (size={w}x{h}), img={img_w}x{img_h}")
+    else:
+        print(f"ROI 확정[MANUAL]: x=[{x0},{x1}) y=[{y0},{y1}) (size={w}x{h}), img={img_w}x{img_h}")
+
+    roi_y0_valid, roi_y1_valid = y0, y1
+    roi_x0_valid, roi_x1_valid = x0, x1
+    return (y0, y1, x0, x1)
 
 # 런 폴더(날짜_시간)와 주파수별 저장 폴더를 미리 생성 (효율성 향상)
 code_dir = os.path.dirname(os.path.abspath(__file__))
@@ -239,6 +300,14 @@ def camera_producer():
                 print(f"HW 비닝 설정 중 예외: {e}")
             # ----------------------------------------------
 
+            # 카메라가 보고하는 실제 해상도 기준으로 ROI 경계 확정
+            try:
+                _validate_and_set_roi_bounds(camera.image_height_pixels, camera.image_width_pixels)
+            except Exception as e:
+                print(f"ROI 경계 확정 실패: {e}")
+
+            print(f"Camera image size: {camera.image_width_pixels} x {camera.image_height_pixels}")
+
             # 하드웨어 트리거 수신을 위해 충분한 내부 버퍼 확보 (드롭 방지)
             camera.arm(200)
             print("카메라 ARM 완료 (하드웨어 트리거 대기 상태)")
@@ -258,12 +327,17 @@ def camera_producer():
                         img = image_buffer_copy.reshape(
                             camera.image_height_pixels, camera.image_width_pixels
                         )
-                        # ROI 경계 보정 (이미지 범위를 벗어나지 않도록 클램프)
-                        y0 = max(0, min(roi_y_start, img.shape[0]))
-                        y1 = max(y0, min(roi_y_end,   img.shape[0]))
-                        x0 = max(0, min(roi_x_start, img.shape[1]))
-                        x1 = max(x0, min(roi_x_end,   img.shape[1]))
+                        # 검증된 ROI 경계 사용 (항상 비어있지 않도록 보장)
+                        y0 = roi_y0_valid if roi_y0_valid is not None else 0
+                        y1 = roi_y1_valid if roi_y1_valid is not None else img.shape[0]
+                        x0 = roi_x0_valid if roi_x0_valid is not None else 0
+                        x1 = roi_x1_valid if roi_x1_valid is not None else img.shape[1]
                         roi = img[y0:y1, x0:x1]
+                        if roi.size == 0:
+                            # 최후 보루: 전체 프레임 사용 및 경계 재설정
+                            print("ERROR: ROI가 비어있음 → 전체 프레임으로 대체 후 AUTO 재계산")
+                            roi = img
+                            _validate_and_set_roi_bounds(img.shape[0], img.shape[1])
                         # 타임스탬프를 소비자에 전달하기 위해 frame.frame_count와 timestamp를 함께 전달
                         ts_rel_ns = getattr(frame, "time_stamp_relative_ns_or_null", None)
                         frame_queue.put(((frame.frame_count, ts_rel_ns), roi))
