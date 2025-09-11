@@ -66,6 +66,7 @@ frames_captured = 0
 capture_lock = threading.Lock()
 camera_ready = False  # 카메라가 ARM되면 True로 설정
 measurement_complete = False
+synth_start_event = threading.Event()  # 연속 프레임 안정 진입 시 SynthHD(CH2) 시작 신호
 
 # -----------------------------------------
 # SDG2082x 제어 함수 (PyVISA 이용)
@@ -92,13 +93,49 @@ def sdg_control():
         print("SDG 초기 설정 오류:", e)
         return
 
+    # -----------------------
+    # CH2: SynthHD 트리거 전용 (기본 HIGH, 짧은 LOW 펄스 = 1 step)
+    # -----------------------
+    try:
+        sdg.write("C2:BSWV WVTP,PULSE")
+        sdg.write("C2:BSWV FRQ,250")
+        sdg.write("C2:OUTP LOAD,HZ")
+        sdg.write("C2:BSWV AMP,3.0")      # 0–3.0 V
+        sdg.write("C2:BSWV OFST,1.5")     # center @ 1.5 V
+        sdg.write("C2:BSWV WIDTH,2e-4")   # 200 µs (LOW 폭으로 사용; step time보다 짧게)
+        # 기본 HIGH, 짧은 LOW를 위해 polarity/duty 설정 시도
+        try:
+            sdg.write("C2:BSWV POL,NEG")  # 지원 시: 펄스 낮아지는 형태(LOW 펄스)
+        except Exception:
+            try:
+                sdg.write("C2:BSWV DUTY,99")  # 대안: 거의 항상 HIGH (펄스 LOW 구간을 매우 짧게)
+            except Exception:
+                pass
+        sdg.write("C2:OUTP OFF")  # 안정 진입 신호 전까지 OFF
+    except Exception as e:
+        print("SDG CH2 초기 설정 오류:", e)
+
+    # 카메라 준비까지 대기 후 CH1 ON (카메라 트리거)
     print("SDG2082x 제어 시작: 카메라 준비 대기 중...")
     while not camera_ready:
         time.sleep(0.01)
     print("카메라 준비 신호 수신. ARM 안정화 0.5 s 대기...")
-    time.sleep(1.5)  # ARM 직후 안정화 대기 (500 ms)
-    print("SDG2082x 펄스 출력 시작")
-    sdg.write("C1:OUTP ON")  # 출력 활성화
+    time.sleep(1.5)  # ARM 직후 안정화 대기
+    print("SDG2082x 펄스 출력 시작 (CH1→Camera)")
+    sdg.write("C1:OUTP ON")  # 카메라용 트리거 시작
+
+    # 컨슈머가 연속 프레임 안정 진입을 알리면 CH2를 켜 SynthHD 스텝 시작
+    def enable_ch2_once():
+        if not synth_start_event.wait(timeout=60):  # 60s 내 안정 진입 신호 없으면 건너뜀
+            return
+        try:
+            print("STABLE 신호 수신: CH2(SynthHD) 트리거 시작")
+            sdg.write("C2:OUTP ON")
+        except Exception as e:
+            print("CH2 출력 ON 실패:", e)
+
+    ch2_once = threading.Thread(target=enable_ch2_once, daemon=True)
+    ch2_once.start()
 
     global frames_captured
     while True:
@@ -109,6 +146,10 @@ def sdg_control():
     # 출력 비활성화 후 종료
     try:
         sdg.write("C1:OUTP OFF")
+    except Exception:
+        pass
+    try:
+        sdg.write("C2:OUTP OFF")
     except Exception:
         pass
     sdg.close()
@@ -165,8 +206,9 @@ def camera_producer():
                         x0 = max(0, min(roi_x_start, img.shape[1]))
                         x1 = max(x0, min(roi_x_end,   img.shape[1]))
                         roi = img[y0:y1, x0:x1]
-                        # ROI 2D 배열을 그대로 큐에 전달 (소비자에서 저장 및 집계)
-                        frame_queue.put((frame.frame_count, roi))
+                        # 타임스탬프를 소비자에 전달하기 위해 frame.frame_count와 timestamp를 함께 전달
+                        ts_rel_ns = getattr(frame, "time_stamp_relative_ns_or_null", None)
+                        frame_queue.put(((frame.frame_count, ts_rel_ns), roi))
                         with capture_lock:
                             frames_captured += 1
                         last_frames_local = frames_captured
@@ -195,6 +237,16 @@ def camera_producer():
 # -----------------------------------------
 def camera_consumer():
     global measurement_complete, intensity_dict
+    # 안정 진입 판정 파라미터 (250 Hz 기준)
+    PREROLL_SEC = 1.0
+    STABLE_N = 25
+    STABLE_T = 0.004     # 4 ms
+    STABLE_TOL = 0.0006  # ±0.6 ms 허용
+    stable_mode = False
+    stable_count = 0
+    last_ts = None
+    first_data_ts = None
+
     # 주파수별 intensity 누적 (평균/라이브 플롯용)
     intensity_dict = defaultdict(list)
     processed_frames = 0
@@ -216,18 +268,60 @@ def camera_consumer():
 
     while processed_frames < target_frames:
         try:
-            frame_num, roi = frame_queue.get(timeout=0.5)
+            meta, roi = frame_queue.get(timeout=0.5)
             # 종료 신호 처리
-            if frame_num is None:
+            if meta is None:
                 break
+            frame_num, ts_rel_ns = meta
 
-            seen += 1
+            # 프레임 타임스탬프 확보 (ns 단위가 제공되면 우선 사용)
+            if ts_rel_ns is not None:
+                ts_now = ts_rel_ns * 1e-9  # ns → s
+            else:
+                ts_now = time.time()
+            if first_data_ts is None:
+                first_data_ts = ts_now
 
-            # 워밍업 프레임 건너뜀 (주파수 경계 정렬)
-            if seen <= warmup_skip:
-                if PRINT_PER_FRAME:
-                    print(f"#{int(frame_num)} warmup-skip {seen}/{warmup_skip}")
+            # PREROLL: 카메라 ARM/CH1 시작 후 초기 구간 무시
+            if (ts_now - first_data_ts) < PREROLL_SEC and not stable_mode:
+                if PRINT_PER_FRAME and (processed_frames % 50 == 0):
+                    print(f"PREROLL 진행 중: {(ts_now - first_data_ts):.2f}s")
                 continue
+
+            # 안정성 판정: 직전 프레임과의 간격이 목표 주기(4 ms)±tol인지 검사
+            if last_ts is None:
+                last_ts = ts_now
+                continue
+            dt = ts_now - last_ts
+            last_ts = ts_now
+            if abs(dt - STABLE_T) <= STABLE_TOL:
+                stable_count += 1
+            else:
+                stable_count = 0
+
+            if not stable_mode:
+                if stable_count >= STABLE_N:
+                    stable_mode = True
+                    print(f"STABLE 진입: Δt≈{STABLE_T*1000:.1f} ms 범위 내 연속 {STABLE_N} 프레임 확인 → 본측정 시작")
+                    # 안정 진입 시점에 SynthHD(CH2) 시작 신호 전송
+                    try:
+                        synth_start_event.set()
+                    except Exception:
+                        pass
+                    # 카운터/버퍼 초기화: 안정 이전 데이터는 버리고 새로 시작
+                    intensity_dict = defaultdict(list)
+                    processed_frames = 0
+                    seen = 0
+                    # HDF5도 안정 이후부터 생성하도록 초기화 리셋
+                    h5 = None
+                    d_roi = d_frame = d_freq = None
+                    h5_index = 0
+                else:
+                    if PRINT_PER_FRAME and (processed_frames % 50 == 0):
+                        print(f"STABILIZING... ({stable_count}/{STABLE_N})")
+                    continue
+
+            seen += 1  # stable_mode 진입 후에만 카운트
 
             # MW 주파수 계산 (로컬 카운터 기반)
             step_index = (seen - warmup_skip - 1) % mw_steps
