@@ -95,7 +95,9 @@ def sdg_control():
     print("SDG2082x 제어 시작: 카메라 준비 대기 중...")
     while not camera_ready:
         time.sleep(0.01)
-    print("카메라 준비 완료. SDG2082x 펄스 출력 시작")
+    print("카메라 준비 신호 수신. ARM 안정화 0.5 s 대기...")
+    time.sleep(0.5)  # ARM 직후 안정화 대기 (500 ms)
+    print("SDG2082x 펄스 출력 시작")
     sdg.write("C1:OUTP ON")  # 출력 활성화
 
     global frames_captured
@@ -140,8 +142,8 @@ def camera_producer():
 
             # 하드웨어 트리거 수신을 위해 충분한 내부 버퍼 확보 (드롭 방지)
             camera.arm(200)
-            print("카메라 ARM: 하드웨어 트리거 대기 중")
-            camera_ready = True  # 카메라 준비 완료
+            print("카메라 ARM 완료 (하드웨어 트리거 대기 상태)")
+            camera_ready = True  # 카메라 준비 신호 즉시 전달
 
             last_report = time.time()
             last_frames_local = 0
@@ -399,4 +401,3 @@ for freq in sorted(intensity_dict.keys()):
 # 각 MW 주파수별 평균 intensity 계산 (각 주파수 당 1000회 측정이 목표)
 frequencies = sorted(intensity_dict.keys())
 avg_intensities = [np.mean(intensity_dict[freq]) for freq in frequencies]
-
