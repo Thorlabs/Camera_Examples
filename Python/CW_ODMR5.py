@@ -309,6 +309,12 @@ def camera_consumer():
     intensity_dict = defaultdict(list)
     processed_frames = 0
 
+    h5 = None
+    d_roi = d_frame = d_freq = None
+    h5_index = 0
+    h5_ready = False     # 모든 dataset 정상 생성 여부
+    h5_disabled = False  # 초기화 실패 시 추가 시도/에러 스팸 방지
+
     if PRINT_PER_FRAME:
         print("Consumer 시작: 프레임-주파수 매핑 및 워밍업 스킵 동작 준비")
 
@@ -355,7 +361,7 @@ def camera_consumer():
                     print(f"PREROLL 진행 중: {(ts_now - first_data_ts):.2f}s")
                 continue
 
-            # 안정성 판정: 직전 프레임과의 간격이 목표 주기(4 ms)±tol인지 검사
+            # 안정성 판정: 직전 프레임과의 간격이 목표 주기(20 ms)±tol인지 검사
             if last_ts is None:
                 last_ts = ts_now
                 continue
@@ -393,6 +399,8 @@ def camera_consumer():
                     h5 = None
                     d_roi = d_frame = d_freq = None
                     h5_index = 0
+                    h5_ready = False
+                    h5_disabled = False
                 else:
                     if PRINT_PER_FRAME and (processed_frames % 50 == 0):
                         print(f"STABILIZING... ({stable_count}/{STABLE_N})")
@@ -407,62 +415,73 @@ def camera_consumer():
             if PRINT_PER_FRAME:
                 print(f"#{int(frame_num)} freq={freq/1e9:.3f} GHz (step {step_index+1}/{mw_steps})")
 
-            # HDF5 초기화
-            if SAVE_HDF5 and HAS_H5PY and h5 is None:
-                try:
-                    h5_path = os.path.join(run_dir, "data.h5")
-                    h5 = h5py.File(h5_path, "w")
-                    h, w = roi.shape
-                    d_roi = h5.create_dataset(
-                        "roi",
-                        shape=(0, h, w),
-                        maxshape=(None, h, w),
-                        dtype=np.uint16,
-                        chunks=(1, h, w),
-                        compression="gzip",
-                    )
-                    d_frame = h5.create_dataset(
-                        "frame_num",
-                        shape=(0,),
-                        maxshape=(None,),
-                        dtype=np.int64,
-                        chunks=True,
-                        compression="gzip",
-                    )
-                    d_freq = h5.create_dataset(
-                        "freq_hz",
-                        shape=(0,),
-                        maxshape=(None,),
-                        dtype=np.float64,
-                        chunks=True,
-                        compression="gzip",
-                    )
-                except Exception as e:
-                    print(f"HDF5 초기화 실패: {e}")
-
-            # ROI 저장 (HDF5 우선, 실패 시 옵션에 따라 .txt)
-            if SAVE_HDF5 and HAS_H5PY and h5 is not None:
-                try:
-                    d_roi.resize((h5_index + 1, d_roi.shape[1], d_roi.shape[2]))
-                    d_roi[h5_index, :, :] = roi.astype(np.uint16)
-                    d_frame.resize((h5_index + 1,))
-                    d_frame[h5_index] = int(frame_num)
-                    d_freq.resize((h5_index + 1,))
-                    d_freq[h5_index] = float(freq)
-                    h5_index += 1
-                except Exception as e:
-                    print(f"HDF5 저장 실패 (frame {frame_num}): {e}")
-            elif SAVE_TXT:
-                try:
-                    freq_mhz = int(round(freq / 1e6))
-                    filename = f"roi_frame_{int(frame_num):06d}_f{freq_mhz:04d}MHz.txt"
-                    filepath = os.path.join(freq_paths[step_index], filename)
-                    np.savetxt(filepath, roi.astype(np.uint16), fmt='%d')
-                except Exception as e:
-                    print(f"ROI 저장 실패 (frame {frame_num}): {e}")
+            # --- Warmup 1 sweep: 로그만 남기고 저장/누적 스킵 ---
+            if seen <= warmup_skip:
+                if PRINT_PER_FRAME and ((seen % 5) == 0 or seen == warmup_skip):
+                    print(f"WARMUP skip {seen}/{warmup_skip}")
+                continue
 
             # 총 intensity 합 (오버플로 방지)
             s = roi.astype(np.uint32).sum()
+            # HDF5 초기화 (안정 이후 첫 저장 시 1회)
+            if SAVE_HDF5 and HAS_H5PY and (not h5_disabled) and (not h5_ready):
+                try:
+                    if h5 is None:
+                        h5_path = os.path.join(run_dir, "data.h5")
+                        h5 = h5py.File(h5_path, "w")
+                    h, w = roi.shape
+                    d_roi = h5.create_dataset("roi", shape=(0,h,w), maxshape=(None,h,w),
+                                            dtype=np.uint16, chunks=(1,h,w), compression="gzip")
+                    d_frame = h5.create_dataset("frame_num", shape=(0,), maxshape=(None,),
+                                                dtype=np.int64, chunks=True, compression="gzip")
+                    d_freq  = h5.create_dataset("freq_hz",  shape=(0,), maxshape=(None,),
+                                                dtype=np.float64, chunks=True, compression="gzip")
+                    h5_index = 0
+                    h5_ready = True
+                    print(f"HDF5 준비 완료: {os.path.basename(h5.filename)} (roi={h}x{w})")
+                except Exception as e:
+                    print(f"HDF5 초기화 실패: {e} — HDF5 저장 비활성화")
+                    try:
+                        if h5 is not None:
+                            h5.close()
+                    except Exception:
+                        pass
+                    h5 = None
+                    d_roi = d_frame = d_freq = None
+                    h5_disabled = True
+
+            # ROI 저장 (HDF5 우선, 실패 시 옵션에 따라 .txt)
+            if SAVE_HDF5 and HAS_H5PY and h5_ready and (not h5_disabled):
+                try:
+                    d_roi.resize((h5_index + 1, d_roi.shape[1], d_roi.shape[2]))
+                    d_roi[h5_index, :, :] = roi.astype(np.uint16)
+                    d_frame.resize((h5_index + 1,)); d_frame[h5_index] = int(frame_num)
+                    d_freq.resize((h5_index + 1,));  d_freq[h5_index]  = float(freq)
+                    h5_index += 1
+                except Exception as e:
+                    print(f"HDF5 저장 실패 (frame {frame_num}): {e} — HDF5 저장 비활성화")
+                    try:
+                        if h5 is not None:
+                            h5.close()
+                    except Exception:
+                        pass
+                    h5 = None
+                    d_roi = d_frame = d_freq = None
+                    h5_ready = False
+                    h5_disabled = True
+            elif SAVE_TXT:
+                # 텍스트 폴백: 주파수별 폴더 내 단일 파일에 append (IO 폭주 방지)
+                try:
+                    # 주파수별 폴더는 상단에서 이미 생성됨 (freq_paths)
+                    freq_folder = freq_paths[step_index]
+                    txt_path = os.path.join(freq_folder, "intensity.txt")
+                    # frame_num, freq(Hz), sum
+                    with open(txt_path, "a", encoding="utf-8") as f:
+                        f.write(f"{int(frame_num)}\t{float(freq)}\t{int(s)}\n")
+                except Exception as e:
+                    print(f"TXT 저장 실패 (frame {frame_num}): {e}")
+
+            # 누적(평균 계산용)
             intensity_dict[freq].append(int(s))
             processed_frames += 1
 
