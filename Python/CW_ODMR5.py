@@ -39,8 +39,8 @@ roi_x_start, roi_x_end = 550, 1001
 #  - AUTO  : 카메라 프레임 중앙에 고정 박스(ROI_AUTO_SIZE x ROI_AUTO_SIZE)
 #  - MANUAL: 아래 roi_* 경계를 사용 (이미지 경계로 자동 보정)
 ROI_MODE = "AUTO"          # 실험 중에는 AUTO 권장, 필요 시 'MANUAL'로 변경
-ROI_AUTO_SIZE = 128         # AUTO 모드에서 사용할 정사각형 ROI 크기(픽셀)
-ROI_MIN_SIZE  = 8           # 어떤 경우에도 최소 보장 크기
+ROI_AUTO_SIZE = 512         # AUTO 모드에서 사용할 정사각형 ROI 크기(픽셀) — 샘플(≈500–1000px)에 맞춤
+ROI_MIN_SIZE  = 64          # 어떤 경우에도 최소 보장 크기(너무 작은 ROI 방지)
 
 # 검증된 ROI 경계 (카메라 해상도에 맞게 런타임에 계산)
 roi_y0_valid = None
@@ -252,27 +252,52 @@ def camera_producer():
 
             # ---- 하드웨어 ROI/비닝 설정 (장치 지원 시) ----
             try:
-                # 요청 ROI 크기 계산
-                req_x = int(roi_x_start)
-                req_y = int(roi_y_start)
-                req_w = int(max(1, roi_x_end - roi_x_start))
-                req_h = int(max(1, roi_y_end - roi_y_start))
-                # 일부 카메라는 ROI 정렬/스텝 제약(예: 8/16 pixel align)이 있으므로 try/except로 안전 적용
+                img_h = int(getattr(camera, "image_height_pixels", 0) or 0)
+                img_w = int(getattr(camera, "image_width_pixels", 0) or 0)
+                if img_h <= 0 or img_w <= 0:
+                    raise RuntimeError("카메라 해상도 조회 실패")
+
                 applied = False
-                for setter in (
-                    lambda: setattr(camera, "roi", (req_x, req_y, req_w, req_h)),
-                    lambda: camera.set_roi(req_x, req_y, req_w, req_h),
-                ):
-                    try:
-                        setter()
-                        applied = True
-                        break
-                    except Exception:
-                        pass
-                if applied:
-                    print(f"HW ROI 적용: x={req_x}, y={req_y}, w={req_w}, h={req_h}")
+                if str(ROI_MODE).upper() == "AUTO":
+                    # 중앙 정사각형 하드웨어 ROI 적용
+                    box = int(max(ROI_MIN_SIZE, min(ROI_AUTO_SIZE, img_h, img_w)))
+                    cy = img_h // 2
+                    cx = img_w // 2
+                    x = max(0, cx - box // 2)
+                    y = max(0, cy - box // 2)
+                    w = min(box, img_w - x)
+                    h = min(box, img_h - y)
+                    # 일부 카메라는 정렬 제약(예: 8/16 align)이 있어 두 번 시도
+                    for setter in (
+                        lambda: setattr(camera, "roi", (x, y, w, h)),
+                        lambda: camera.set_roi(x, y, w, h),
+                    ):
+                        try:
+                            setter(); applied = True; break
+                        except Exception:
+                            pass
+                    if applied:
+                        print(f"HW ROI(AUTO) 적용: x={x}, y={y}, w={w}, h={h}")
+                    else:
+                        print("HW ROI(AUTO) 적용 실패: 장치에서 ROI 속성을 지원하지 않음 (소프트웨어 크롭으로 대체).")
                 else:
-                    print("HW ROI 적용 실패: 장치에서 ROI 속성을 지원하지 않음 (소프트웨어 크롭으로 대체).")
+                    # MANUAL: 사용자가 준 경계를 하드웨어 ROI로 시도
+                    req_x = int(roi_x_start)
+                    req_y = int(roi_y_start)
+                    req_w = int(max(ROI_MIN_SIZE, roi_x_end - roi_x_start))
+                    req_h = int(max(ROI_MIN_SIZE, roi_y_end - roi_y_start))
+                    for setter in (
+                        lambda: setattr(camera, "roi", (req_x, req_y, req_w, req_h)),
+                        lambda: camera.set_roi(req_x, req_y, req_w, req_h),
+                    ):
+                        try:
+                            setter(); applied = True; break
+                        except Exception:
+                            pass
+                    if applied:
+                        print(f"HW ROI(MANUAL) 적용: x={req_x}, y={req_y}, w={req_w}, h={req_h}")
+                    else:
+                        print("HW ROI(MANUAL) 적용 실패: 장치에서 ROI 속성을 지원하지 않음 (소프트웨어 크롭으로 대체).")
             except Exception as e:
                 print(f"HW ROI 설정 중 예외: {e}")
 
@@ -288,8 +313,7 @@ def camera_producer():
                     lambda: camera.set_binning(2),
                 ):
                     try:
-                        setter()
-                        binned = True
+                        setter(); binned = True
                     except Exception:
                         pass
                 if binned:
