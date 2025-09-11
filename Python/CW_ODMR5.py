@@ -125,12 +125,12 @@ def camera_producer():
             print("카메라가 감지되지 않았습니다.")
             return
         with sdk.open_camera(available_cameras[0]) as camera:
-            # 하드웨어 트리거: Rising edge(LOW→HIGH)로 명시 (SDK Enum 사용)
+            # 하드웨어 트리거: Falling edge(HIGH→LOW)로 명시 (SDK Enum 사용)
             try:
                 camera.operation_mode = OPERATION_MODE.HARDWARE_TRIGGERED
                 camera.frames_per_trigger_zero_for_unlimited = 1
-                # TRIGGER_POLARITY.ACTIVE_HIGH = rising edge
-                camera.trigger_polarity = TRIGGER_POLARITY.ACTIVE_HIGH
+                camera.trigger_polarity = TRIGGER_POLARITY.ACTIVE_LOW  # 시험: Falling edge (HIGH→LOW)
+                print("카메라 트리거 극성: ACTIVE_LOW(Falling)로 설정")
             except Exception as e:
                 print(f"트리거 모드/극성 설정 실패: {e}")
 
