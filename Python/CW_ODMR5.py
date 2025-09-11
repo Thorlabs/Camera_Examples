@@ -87,7 +87,7 @@ def sdg_control():
         sdg.write("*RST")
         time.sleep(0.1)
         sdg.write("C1:BSWV WVTP,PULSE")   # 펄스 모드 선택
-        sdg.write("C1:BSWV FRQ,250")         # 250Hz 펄스 → 4ms 주기
+        sdg.write("C1:BSWV FRQ,50")         # 50Hz 펄스 → 20ms 주기
         sdg.write("C1:OUTP LOAD,HZ")
         sdg.write("C1:BSWV AMP,3.3")      # 3.3 Vpp (LVTTL range)
         sdg.write("C1:BSWV OFST,1.65")    # 0–3.3 V level (centered)
@@ -102,7 +102,7 @@ def sdg_control():
     # -----------------------
     try:
         sdg.write("C2:BSWV WVTP,PULSE")
-        sdg.write("C2:BSWV FRQ,250")
+        sdg.write("C2:BSWV FRQ,50")
         sdg.write("C2:OUTP LOAD,HZ")
         sdg.write("C2:BSWV AMP,3.0")      # 0–3.0 V
         sdg.write("C2:BSWV OFST,1.5")     # center @ 1.5 V
@@ -189,6 +189,56 @@ def camera_producer():
             # 하드웨어 트리거 사용 시 내부 프레임레이트 제어는 비활성화
             camera.is_frame_rate_control_enabled = False
 
+            # ---- 하드웨어 ROI/비닝 설정 (장치 지원 시) ----
+            try:
+                # 요청 ROI 크기 계산
+                req_x = int(roi_x_start)
+                req_y = int(roi_y_start)
+                req_w = int(max(1, roi_x_end - roi_x_start))
+                req_h = int(max(1, roi_y_end - roi_y_start))
+                # 일부 카메라는 ROI 정렬/스텝 제약(예: 8/16 pixel align)이 있으므로 try/except로 안전 적용
+                applied = False
+                for setter in (
+                    lambda: setattr(camera, "roi", (req_x, req_y, req_w, req_h)),
+                    lambda: camera.set_roi(req_x, req_y, req_w, req_h),
+                ):
+                    try:
+                        setter()
+                        applied = True
+                        break
+                    except Exception:
+                        pass
+                if applied:
+                    print(f"HW ROI 적용: x={req_x}, y={req_y}, w={req_w}, h={req_h}")
+                else:
+                    print("HW ROI 적용 실패: 장치에서 ROI 속성을 지원하지 않음 (소프트웨어 크롭으로 대체).")
+            except Exception as e:
+                print(f"HW ROI 설정 중 예외: {e}")
+
+            # 비닝(가능 시 2x2) → 리드아웃/대역폭 완화
+            try:
+                binned = False
+                for setter in (
+                    lambda: setattr(camera, "bin_x", 2),
+                    lambda: setattr(camera, "bin_y", 2),
+                    lambda: setattr(camera, "binning", 2),
+                    lambda: camera.set_binx(2),
+                    lambda: camera.set_biny(2),
+                    lambda: camera.set_binning(2),
+                ):
+                    try:
+                        setter()
+                        binned = True
+                    except Exception:
+                        pass
+                if binned:
+                    print("HW 비닝 적용: 2x2 (가능한 축에 한해)")
+                else:
+                    print("HW 비닝 미적용: 장치가 해당 속성을 지원하지 않음.")
+            except Exception as e:
+                print(f"HW 비닝 설정 중 예외: {e}")
+            # ----------------------------------------------
+
             # 하드웨어 트리거 수신을 위해 충분한 내부 버퍼 확보 (드롭 방지)
             camera.arm(200)
             print("카메라 ARM 완료 (하드웨어 트리거 대기 상태)")
@@ -245,11 +295,11 @@ def camera_producer():
 # -----------------------------------------
 def camera_consumer():
     global measurement_complete, intensity_dict
-    # 안정 진입 판정 파라미터 (250 Hz 기준)
+    # 안정 진입 판정 파라미터 (50 Hz 기준)
     PREROLL_SEC = 1.0
     STABLE_N = 25
-    STABLE_T = 0.004     # 4 ms
-    STABLE_TOL = 0.0015  # (A) 진단용 임시 완화: ±1.5 ms 허용
+    STABLE_T = 0.020     # 20 ms (50 Hz)
+    STABLE_TOL = 0.0020  # ±2.0 ms 허용 (wall clock fallback 대비)
     stable_mode = False
     stable_count = 0
     last_ts = None
