@@ -96,7 +96,7 @@ def sdg_control():
     while not camera_ready:
         time.sleep(0.01)
     print("카메라 준비 신호 수신. ARM 안정화 0.5 s 대기...")
-    time.sleep(0.5)  # ARM 직후 안정화 대기 (500 ms)
+    time.sleep(1.5)  # ARM 직후 안정화 대기 (500 ms)
     print("SDG2082x 펄스 출력 시작")
     sdg.write("C1:OUTP ON")  # 출력 활성화
 
