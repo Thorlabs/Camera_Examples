@@ -21,3 +21,6 @@
 # 파이썬 캐시 파일
 *.pyc
 __pycache__/
+
+# macOS 시스템 파일
+*.DS_Store
