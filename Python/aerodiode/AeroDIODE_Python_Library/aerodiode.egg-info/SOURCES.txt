@@ -1,0 +1,7 @@
+README.md
+setup.py
+aerodiode.egg-info/PKG-INFO
+aerodiode.egg-info/SOURCES.txt
+aerodiode.egg-info/dependency_links.txt
+aerodiode.egg-info/requires.txt
+aerodiode.egg-info/top_level.txt

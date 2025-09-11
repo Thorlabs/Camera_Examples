@@ -1,0 +1,23 @@
+Metadata-Version: 2.1
+Name: aerodiode
+Version: 1.1.0
+Summary: Aerodiode device control
+Home-page: UNKNOWN
+Author: AeroDIODE
+Author-email: <info@AeroDIODE.com>
+License: UNKNOWN
+Keywords: python,optoelectronic,laser,aerodiode
+Platform: UNKNOWN
+Classifier: Development Status :: 1 - Planning
+Classifier: Intended Audience :: Developers
+Classifier: Programming Language :: Python :: 3
+Classifier: Operating System :: Unix
+Classifier: Operating System :: MacOS :: MacOS X
+Classifier: Operating System :: Microsoft :: Windows
+Description-Content-Type: text/markdown
+
+
+# LIB_COMMUN_PYTHON
+
+py setup.py install
+
