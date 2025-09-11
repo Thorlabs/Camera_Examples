@@ -53,7 +53,11 @@ for i in range(mw_steps):
 PRINT_PER_FRAME = True      # 프레임당 1회 로그 출력 (프레임 번호 + 주파수)
 SAVE_TXT = False            # 주파수 폴더별 .txt 저장 (비권장: 파일 수 많음)
 SAVE_HDF5 = True            # HDF5에 ROI/메타데이터 스트리밍 저장
+
 LIVE_ODMR = True            # 스윕 1회마다 라이브 평균 ODMR 플롯 업데이트
+
+# 카메라 외부 트리거 엣지 설정: 'rising' 또는 'falling'
+CAMERA_TRIGGER_EDGE = "rising"
 
 # 카메라 프레임 데이터와 intensity 데이터 저장용 자료구조
 # 프레임 큐: 이미지 전체를 저장하지 않고 (frame_count, roi_total_intensity)만 저장하여 메모리 사용 최소화
@@ -166,12 +170,16 @@ def camera_producer():
             print("카메라가 감지되지 않았습니다.")
             return
         with sdk.open_camera(available_cameras[0]) as camera:
-            # 하드웨어 트리거: Falling edge(HIGH→LOW)로 명시 (SDK Enum 사용)
+            # 하드웨어 트리거: 엣지(상승/하강) 설정 (SDK Enum 사용)
             try:
                 camera.operation_mode = OPERATION_MODE.HARDWARE_TRIGGERED
                 camera.frames_per_trigger_zero_for_unlimited = 1
-                camera.trigger_polarity = TRIGGER_POLARITY.ACTIVE_LOW  # 시험: Falling edge (HIGH→LOW)
-                print("카메라 트리거 극성: ACTIVE_LOW(Falling)로 설정")
+                if CAMERA_TRIGGER_EDGE.lower() == "rising":
+                    camera.trigger_polarity = TRIGGER_POLARITY.ACTIVE_HIGH  # Low→High (Rising)
+                    print("카메라 트리거 극성: ACTIVE_HIGH (Rising, Low→High)")
+                else:
+                    camera.trigger_polarity = TRIGGER_POLARITY.ACTIVE_LOW   # High→Low (Falling)
+                    print("카메라 트리거 극성: ACTIVE_LOW (Falling, High→Low)")
             except Exception as e:
                 print(f"트리거 모드/극성 설정 실패: {e}")
 
