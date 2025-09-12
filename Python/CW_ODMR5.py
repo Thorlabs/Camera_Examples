@@ -28,7 +28,11 @@ except ImportError:
 n_frames = 20000  # 측정할 총 프레임 수 (대용량 측정)
 mw_start = 3e9    # 시작 MW 주파수: 3 GHz
 mw_step = 5e7     # 주파수 스텝: 50 MHz
+
 mw_steps = 20     # 20 스텝 (3 GHz ~ 3.95 GHz)
+
+# SDG 트리거 주파수(Hz): 카메라 readout 여유가 부족하면 25로 낮춰 테스트
+SDG_FREQ_HZ = 50
 
 
 # ROI 영역 설정 (MANUAL 모드에서만 사용; AUTO일 때는 무시되고 중앙 고정 박스 사용)
@@ -210,7 +214,7 @@ def sdg_control():
         sdg.write("*RST")
         time.sleep(0.1)
         sdg.write("C1:BSWV WVTP,PULSE")   # 펄스 모드 선택
-        sdg.write("C1:BSWV FRQ,50")         # 50Hz 펄스 → 20ms 주기
+        sdg.write(f"C1:BSWV FRQ,{SDG_FREQ_HZ}")  # ex) 50 Hz → 20 ms
         sdg.write("C1:OUTP LOAD,HZ")
         sdg.write("C1:BSWV AMP,3.3")      # 3.3 Vpp (LVTTL range)
         sdg.write("C1:BSWV OFST,1.65")    # 0–3.3 V level (centered)
@@ -225,7 +229,7 @@ def sdg_control():
     # -----------------------
     try:
         sdg.write("C2:BSWV WVTP,PULSE")
-        sdg.write("C2:BSWV FRQ,50")
+        sdg.write(f"C2:BSWV FRQ,{SDG_FREQ_HZ}")
         sdg.write("C2:OUTP LOAD,HZ")
         sdg.write("C2:BSWV AMP,3.0")      # 0–3.0 V
         sdg.write("C2:BSWV OFST,1.5")     # center @ 1.5 V
@@ -827,9 +831,7 @@ def camera_consumer():
                 except Exception:
                     pass
                 try:
-                    # STABLE_T가 0.020이라면 50 Hz
-                    sdg_hz = int(round(1.0 / 0.020))
-                    summary.append(f"sdg_freq_hz: {sdg_hz}")
+                    summary.append(f"sdg_freq_hz: {int(SDG_FREQ_HZ)}")
                 except Exception:
                     pass
                 try:
