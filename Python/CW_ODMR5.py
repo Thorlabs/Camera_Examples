@@ -28,42 +28,23 @@ except ImportError:
 n_frames = 20000  # 측정할 총 프레임 수 (대용량 측정)
 mw_start = 3e9    # 시작 MW 주파수: 3 GHz
 mw_step = 5e7     # 주파수 스텝: 50 MHz
-
 mw_steps = 20     # 20 스텝 (3 GHz ~ 3.95 GHz)
 
-SDG_FREQ_HZ = 50
 
 # ROI 영역 설정 (MANUAL 모드에서만 사용; AUTO일 때는 무시되고 중앙 고정 박스 사용)
 roi_y_start, roi_y_end = 400, 801
 roi_x_start, roi_x_end = 550, 1001
 
-# ROI 모드: 'AUTO', 'MANUAL', 'PRESET'
-#  - AUTO  : 카메라 프레임 중앙에 고정 박스(ROI_AUTO_SIZE x ROI_AUTO_SIZE 또는 RECT)
+# ROI 모드: 'AUTO' or 'MANUAL'
+#  - AUTO  : 카메라 프레임 중앙에 고정 박스(ROI_AUTO_SIZE x ROI_AUTO_SIZE)
 #  - MANUAL: 아래 roi_* 경계를 사용 (이미지 경계로 자동 보정)
-#  - PRESET: ROI_PRESETS에서 인덱스 선택
-ROI_MODE = "AUTO"          # 실험 중에는 AUTO 권장, 필요 시 'MANUAL' 또는 'PRESET'로 변경
+ROI_MODE = "AUTO"          # 실험 중에는 AUTO 권장, 필요 시 'MANUAL'로 변경
 ROI_AUTO_SIZE = 512         # AUTO 모드에서 사용할 정사각형 ROI 크기(픽셀) — 샘플(≈500–1000px)에 맞춤
 ROI_MIN_SIZE  = 64          # 어떤 경우에도 최소 보장 크기(너무 작은 ROI 방지)
-
-# AUTO ROI 모양: 'SQUARE' or 'RECT'
-ROI_SHAPE = "SQUARE"          # 'SQUARE'면 ROI_AUTO_SIZE 사용, 'RECT'면 아래 W/H 사용
-ROI_AUTO_W = 640               # RECT 모드일 때 사용 (가로)
-ROI_AUTO_H = 360               # RECT 모드일 때 사용 (세로)
-
-# PRESET 모드: 여러 사전 정의 ROI를 인덱스로 선택
-# 각 항목은 (x0, y0, w, h). 카메라 해상도 내에서 자동 클램프됨
-ROI_PRESETS = [
-    (0, 0, 512, 512),
-    (100, 100, 800, 300),
-    (200, 50,  1024, 256),
-]
-ROI_PRESET_INDEX = 0           # ROI_MODE='PRESET'일 때 사용할 인덱스
-
 
 # ----- Contrast baseline 설정 (딥이 ~1% 수준일 때 더 타이트/견고하게) -----
 CONTRAST_Q = 0.95        # 상위 quantile (예: 0.95 → 상위 5%)
 CONTRAST_MIN_SAMPLES = 5 # 상위 구간에서 최소 샘플 수 (부족하면 max(y) 사용)
-
 
 # 검증된 ROI 경계 (카메라 해상도에 맞게 런타임에 계산)
 roi_y0_valid = None
@@ -73,38 +54,20 @@ roi_x1_valid = None
 
 def _validate_and_set_roi_bounds(img_h, img_w):
     global roi_y0_valid, roi_y1_valid, roi_x0_valid, roi_x1_valid
-    mode = str(ROI_MODE).upper()
-    if mode == "AUTO":
-        # 중앙 ROI: 정사각 또는 직사각
-        if str(ROI_SHAPE).upper() == "RECT":
-            box_w = int(max(ROI_MIN_SIZE, min(ROI_AUTO_W, img_w)))
-            box_h = int(max(ROI_MIN_SIZE, min(ROI_AUTO_H, img_h)))
-        else:
-            box = int(max(ROI_MIN_SIZE, min(ROI_AUTO_SIZE, img_h, img_w)))
-            box_w = box_h = box
-        cy = img_h // 2; cx = img_w // 2
-        x0 = max(0, cx - box_w // 2)
-        y0 = max(0, cy - box_h // 2)
-        x1 = min(img_w, x0 + box_w)
-        y1 = min(img_h, y0 + box_h)
-        w = x1 - x0; h = y1 - y0
+    # AUTO 모드: 중앙 고정 박스
+    if str(ROI_MODE).upper() == "AUTO":
+        box = int(max(ROI_MIN_SIZE, min(ROI_AUTO_SIZE, img_h, img_w)))
+        cy = img_h // 2
+        cx = img_w // 2
+        y0 = max(0, cy - box // 2)
+        y1 = min(img_h, y0 + box)
+        x0 = max(0, cx - box // 2)
+        x1 = min(img_w, x0 + box)
+        h = y1 - y0
+        w = x1 - x0
         roi_y0_valid, roi_y1_valid = y0, y1
         roi_x0_valid, roi_x1_valid = x0, x1
-        shape_tag = "AUTO-RECT" if str(ROI_SHAPE).upper()=="RECT" else "AUTO"
-        print(f"ROI 확정[{shape_tag}]: x=[{x0},{x1}) y=[{y0},{y1}) (size={w}x{h}), img={img_w}x{img_h}")
-        return (y0, y1, x0, x1)
-
-    if mode == "PRESET":
-        try:
-            x, y, w, h = ROI_PRESETS[int(ROI_PRESET_INDEX)]
-        except Exception:
-            x, y, w, h = 0, 0, ROI_MIN_SIZE, ROI_MIN_SIZE
-        x0 = max(0, min(int(x), img_w)); y0 = max(0, min(int(y), img_h))
-        x1 = max(x0 + ROI_MIN_SIZE, min(int(x + w), img_w))
-        y1 = max(y0 + ROI_MIN_SIZE, min(int(y + h), img_h))
-        roi_y0_valid, roi_y1_valid = y0, y1
-        roi_x0_valid, roi_x1_valid = x0, x1
-        print(f"ROI 확정[PRESET#{ROI_PRESET_INDEX}]: x=[{x0},{x1}) y=[{y0},{y1}) (size={x1-x0}x{y1-y0}), img={img_w}x{img_h}")
+        print(f"ROI 확정[AUTO]: x=[{x0},{x1}) y=[{y0},{y1}) (size={w}x{h}), img={img_w}x{img_h}")
         return (y0, y1, x0, x1)
 
     # MANUAL 모드: 사용자가 지정한 경계를 이미지 경계로 클램프
@@ -112,15 +75,29 @@ def _validate_and_set_roi_bounds(img_h, img_w):
     y1 = max(y0 + 1, min(int(roi_y_end),   img_h))
     x0 = max(0, min(int(roi_x_start), img_w))
     x1 = max(x0 + 1, min(int(roi_x_end),   img_w))
-    h = y1 - y0; w = x1 - x0
+    h = y1 - y0
+    w = x1 - x0
+
+    # 최소 크기 보장, 실패 시 AUTO로 폴백
     if h < ROI_MIN_SIZE or w < ROI_MIN_SIZE:
         print("WARN: 요청 ROI가 이미지 범위 밖/너무 작음 → AUTO 모드로 대체")
-        return _validate_and_set_roi_bounds(img_h, img_w)  # AUTO 경로 재사용
+        ROI_MODE_UP = "AUTO"  # local flag to reuse logic below
+        box = int(max(ROI_MIN_SIZE, min(ROI_AUTO_SIZE, img_h, img_w)))
+        cy = img_h // 2
+        cx = img_w // 2
+        y0 = max(0, cy - box // 2)
+        y1 = min(img_h, y0 + box)
+        x0 = max(0, cx - box // 2)
+        x1 = min(img_w, x0 + box)
+        h = y1 - y0
+        w = x1 - x0
+        print(f"ROI 확정[AUTO*]: x=[{x0},{x1}) y=[{y0},{y1}) (size={w}x{h}), img={img_w}x{img_h}")
+    else:
+        print(f"ROI 확정[MANUAL]: x=[{x0},{x1}) y=[{y0},{y1}) (size={w}x{h}), img={img_w}x{img_h}")
+
     roi_y0_valid, roi_y1_valid = y0, y1
     roi_x0_valid, roi_x1_valid = x0, x1
-    print(f"ROI 확정[MANUAL]: x=[{x0},{x1}) y=[{y0},{y1}) (size={w}x{h}), img={img_w}x{img_h}")
     return (y0, y1, x0, x1)
-
 
 # 런 폴더(날짜_시간)와 주파수별 저장 폴더를 미리 생성 (효율성 향상)
 code_dir = os.path.dirname(os.path.abspath(__file__))
@@ -137,6 +114,7 @@ for i in range(mw_steps):
     os.makedirs(folder_path, exist_ok=True)
     freq_paths.append(folder_path)
 
+# 런타임 플래그
 PRINT_PER_FRAME = True      # 프레임당 1회 로그 출력 (프레임 번호 + 주파수)
 SAVE_TXT = False            # 주파수 폴더별 .txt 저장 (비권장: 파일 수 많음)
 SAVE_HDF5 = True            # HDF5에 ROI/메타데이터 스트리밍 저장
@@ -152,29 +130,14 @@ frame_queue = queue.Queue(maxsize=512)
 plot_queue = queue.Queue(maxsize=16)  # 라이브 플롯 업데이트용 (메인 스레드에서만 그림)
 intensity_dict = {}  # key: MW 주파수 (Hz), value: list of ROI 총 intensity 값
 
+# 전역 변수 및 동기화를 위한 변수
 frames_captured = 0
 capture_lock = threading.Lock()
 camera_ready = False  # 카메라가 ARM되면 True로 설정
 measurement_complete = False
-
 synth_start_event = threading.Event()  # 연속 프레임 안정 진입 시 SynthHD(CH2) 시작 신호
-
+# 비상 중단 신호 (워치독이 트리거)
 abort_event = threading.Event()
-abort_reason = None             # "no-frames" | "stable-timeout" | "keyboard" | "user" | other
-
-WAIT_LOG_INTERVAL = 2.0       # WAIT 로그 주기 (초)
-MAX_WAIT_STRIKES  = 8         # WAIT 연속 횟수 초과 시 abort (≈ 16 s)
-STABLE_TIMEOUT_SEC = 60.0     # PREROLL 이후 STABLE 미진입 타임아웃
-
-_last_image_size = (None, None)  # (w,h)
-_last_roi_size   = (None, None)  # (w,h)
-
-def _abort(reason: str):
-    """Set global abort with a single reason exactly once."""
-    global abort_reason
-    if not abort_event.is_set():
-        abort_reason = reason
-        abort_event.set()
 
 # -----------------------------------------
 # SDG2082x 제어 함수 (PyVISA 이용)
@@ -191,7 +154,7 @@ def sdg_control():
         sdg.write("*RST")
         time.sleep(0.1)
         sdg.write("C1:BSWV WVTP,PULSE")   # 펄스 모드 선택
-        sdg.write(f"C1:BSWV FRQ,{SDG_FREQ_HZ}")  # ex) 50 Hz → 20 ms
+        sdg.write("C1:BSWV FRQ,50")         # 50Hz 펄스 → 20ms 주기
         sdg.write("C1:OUTP LOAD,HZ")
         sdg.write("C1:BSWV AMP,3.3")      # 3.3 Vpp (LVTTL range)
         sdg.write("C1:BSWV OFST,1.65")    # 0–3.3 V level (centered)
@@ -206,7 +169,7 @@ def sdg_control():
     # -----------------------
     try:
         sdg.write("C2:BSWV WVTP,PULSE")
-        sdg.write(f"C2:BSWV FRQ,{SDG_FREQ_HZ}")
+        sdg.write("C2:BSWV FRQ,50")
         sdg.write("C2:OUTP LOAD,HZ")
         sdg.write("C2:BSWV AMP,3.0")      # 0–3.0 V
         sdg.write("C2:BSWV OFST,1.5")     # center @ 1.5 V
@@ -226,6 +189,14 @@ def sdg_control():
     # 카메라 준비까지 대기 후 CH1 ON (카메라 트리거)
     print("SDG2082x 제어 시작: 카메라 준비 대기 중...")
     while not camera_ready:
+        if abort_event.is_set():
+            try:
+                sdg.write("C1:OUTP OFF"); sdg.write("C2:OUTP OFF")
+            except Exception:
+                pass
+            sdg.close()
+            print("ABORT 수신: SDG 출력 OFF 후 종료")
+            return
         time.sleep(0.01)
     print("카메라 준비 신호 수신. ARM 안정화 0.5 s 대기...")
     time.sleep(1.5)  # ARM 직후 안정화 대기
@@ -247,10 +218,14 @@ def sdg_control():
 
     global frames_captured
     while True:
-        # 비상정지 즉시 종료
         if abort_event.is_set():
+            try:
+                sdg.write("C1:OUTP OFF"); sdg.write("C2:OUTP OFF")
+            except Exception:
+                pass
+            sdg.close()
             print("ABORT 수신: SDG 출력 OFF 후 종료")
-            break
+            return
         with capture_lock:
             if frames_captured >= n_frames:
                 break
@@ -297,40 +272,7 @@ def camera_producer():
             # 하드웨어 트리거 사용 시 내부 프레임레이트 제어는 비활성화
             camera.is_frame_rate_control_enabled = False
 
-            # ---- 센서/ROI 초기화: 과거 설정 잔존 방지 (full-frame, 1x1) ----
-            try:
-                # 1x1로 초기화 (가능한 속성 모두 시도)
-                for setter in (
-                    lambda: setattr(camera, "bin_x", 1),
-                    lambda: setattr(camera, "bin_y", 1),
-                    lambda: setattr(camera, "binning", 1),
-                    lambda: camera.set_binx(1),
-                    lambda: camera.set_biny(1),
-                    lambda: camera.set_binning(1),
-                ):
-                    try:
-                        setter()
-                    except Exception:
-                        pass
-                # 전체 센서 크기로 ROI 초기화
-                sensor_w = int(getattr(camera, "sensor_width_pixels", 0) or 0)
-                sensor_h = int(getattr(camera, "sensor_height_pixels", 0) or 0)
-                if sensor_w > 0 and sensor_h > 0:
-                    for setter in (
-                        lambda: setattr(camera, "roi", (0, 0, sensor_w, sensor_h)),
-                        lambda: camera.set_roi(0, 0, sensor_w, sensor_h),
-                    ):
-                        try:
-                            setter(); break
-                        except Exception:
-                            pass
-                    print(f"센서 초기화: full-frame {sensor_w}x{sensor_h}, bin=1x1")
-                else:
-                    print("센서 크기 조회 실패: full-frame 초기화 스킵")
-            except Exception as e:
-                print(f"센서/ROI 초기화 중 예외: {e}")
-
-            # ---- 하드웨어 ROI 설정 (AUTO 우선; 장치가 지원하지 않으면 안내) ----
+            # ---- 하드웨어 ROI/비닝 설정 (장치 지원 시) ----
             try:
                 img_h = int(getattr(camera, "image_height_pixels", 0) or 0)
                 img_w = int(getattr(camera, "image_width_pixels", 0) or 0)
@@ -339,13 +281,15 @@ def camera_producer():
 
                 applied = False
                 if str(ROI_MODE).upper() == "AUTO":
-                    # 중앙 정사각형 ROI
+                    # 중앙 정사각형 하드웨어 ROI 적용
                     box = int(max(ROI_MIN_SIZE, min(ROI_AUTO_SIZE, img_h, img_w)))
-                    cy = img_h // 2; cx = img_w // 2
+                    cy = img_h // 2
+                    cx = img_w // 2
                     x = max(0, cx - box // 2)
                     y = max(0, cy - box // 2)
                     w = min(box, img_w - x)
                     h = min(box, img_h - y)
+                    # 일부 카메라는 정렬 제약(예: 8/16 align)이 있어 두 번 시도
                     for setter in (
                         lambda: setattr(camera, "roi", (x, y, w, h)),
                         lambda: camera.set_roi(x, y, w, h),
@@ -359,7 +303,7 @@ def camera_producer():
                     else:
                         print("HW ROI(AUTO) 적용 실패: 장치에서 ROI 속성을 지원하지 않음 (소프트웨어 크롭으로 대체).")
                 else:
-                    # MANUAL 경계 사용
+                    # MANUAL: 사용자가 준 경계를 하드웨어 ROI로 시도
                     req_x = int(roi_x_start)
                     req_y = int(roi_y_start)
                     req_w = int(max(ROI_MIN_SIZE, roi_x_end - roi_x_start))
@@ -379,7 +323,7 @@ def camera_producer():
             except Exception as e:
                 print(f"HW ROI 설정 중 예외: {e}")
 
-            # ---- 비닝(가능 시 2x2) → 리드아웃/대역폭 완화 ----
+            # 비닝(가능 시 2x2) → 리드아웃/대역폭 완화
             try:
                 binned = False
                 for setter in (
@@ -400,32 +344,15 @@ def camera_producer():
                     print("HW 비닝 미적용: 장치가 해당 속성을 지원하지 않음.")
             except Exception as e:
                 print(f"HW 비닝 설정 중 예외: {e}")
-
-            # 적용 결과 확인용 이미지 크기 출력
-            try:
-                print(f"적용 후 image size: {camera.image_width_pixels} x {camera.image_height_pixels}")
-                try:
-                    global _last_image_size
-                    _last_image_size = (int(camera.image_width_pixels), int(camera.image_height_pixels))
-                except Exception:
-                    pass
-            except Exception:
-                pass
             # ----------------------------------------------
 
             # 카메라가 보고하는 실제 해상도 기준으로 ROI 경계 확정
             try:
                 _validate_and_set_roi_bounds(camera.image_height_pixels, camera.image_width_pixels)
-                try:
-                    global _last_roi_size
-                    _last_roi_size = (int(roi_x1_valid - roi_x0_valid), int(roi_y1_valid - roi_y0_valid))
-                except Exception:
-                    pass
             except Exception as e:
                 print(f"ROI 경계 확정 실패: {e}")
 
             print(f"Camera image size: {camera.image_width_pixels} x {camera.image_height_pixels}")
-            time.sleep(0.2)  # ROI/비닝 적용 직후 내부 안정화
 
             # 하드웨어 트리거 수신을 위해 충분한 내부 버퍼 확보 (드롭 방지)
             camera.arm(200)
@@ -438,6 +365,8 @@ def camera_producer():
 
             try:
                 while True:
+                    if abort_event.is_set():
+                        break
                     with capture_lock:
                         if frames_captured >= n_frames:
                             break
@@ -465,24 +394,23 @@ def camera_producer():
                             frames_captured += 1
                         last_frames_local = frames_captured
                         last_report = time.time()
-                        # 프레임을 받기 시작하면 스트라이크 리셋
+                        # 디버깅: 매 1000프레임마다 진행상황 출력
+                        if frames_captured % 1000 == 0:
+                            print(f"DEBUG: 현재까지 {frames_captured} 프레임 수집됨")
                         wait_strikes = 0
-                        # (진행상황 출력 삭제)
-                    # 외부 트리거 대기 상태 감시: 일정 시간 프레임이 없으면 안내 로그 및 abort 처리
-                    if time.time() - last_report > WAIT_LOG_INTERVAL and frames_captured == last_frames_local:
+                    # 외부 트리거 대기 상태 감시: 일정 시간 프레임이 없으면 안내 로그
+                    if time.time() - last_report > 2.0 and frames_captured == last_frames_local:
+                        print("WAIT: 아직 수신 프레임 없음 (외부 트리거 대기 중). 트리거 케이블/극성/레벨을 확인하세요.")
                         wait_strikes += 1
-                        print(f"WAIT[{wait_strikes}/{MAX_WAIT_STRIKES}]: 아직 수신 프레임 없음 (외부 트리거 대기 중). 트리거 케이블/극성/레벨을 확인하세요.")
-                        last_report = time.time()
-                        if wait_strikes >= MAX_WAIT_STRIKES:
+                        if wait_strikes >= 8:
                             print("ABORT: 프레임 무수신 상태가 지속되어 측정을 중단합니다.")
-                            _abort("no-frames")
+                            abort_event.set()
                             break
-                    elif frames_captured != last_frames_local:
-                        # 프레임을 받기 시작하면 스트라이크 리셋
-                        wait_strikes = 0
+                        last_report = time.time()
+                    # 프레임 번호 및 현재까지 수집된 프레임 정보 출력
+                    # 삭제됨: print(f"프레임 #{frame.frame_count} 저장 (총 {frames_captured}/{n_frames})")
             except KeyboardInterrupt:
                 print("카메라 Producer 종료 (KeyboardInterrupt)")
-                _abort("keyboard")
             finally:
                 camera.disarm()
                 # 소비자 종료 신호
@@ -531,11 +459,8 @@ def camera_consumer():
     # 카메라 프레임카운트에 의존하지 않도록 로컬 카운터 사용
     seen = 0
 
-    stable_timer_base = None
     while processed_frames < target_frames:
         try:
-            if abort_event.is_set():
-                break
             meta, roi = frame_queue.get(timeout=0.5)
             # 종료 신호 처리
             if meta is None:
@@ -547,34 +472,44 @@ def camera_consumer():
                 ts_now = ts_rel_ns * 1e-9  # ns → s
             else:
                 ts_now = time.time()
+            # --- Diagnostics (A): timestamp source check, print once ---
+            try:
+                if (processed_frames == 0):
+                    if ts_rel_ns is None:
+                        print("INFO: camera timestamp is None → using wall clock for Δt (stability tolerance relaxed to ±1.5 ms).")
+                    else:
+                        print("INFO: camera timestamp detected (ns) → using hardware Δt.")
+            except Exception:
+                pass
             if first_data_ts is None:
                 first_data_ts = ts_now
 
             # PREROLL: 카메라 ARM/CH1 시작 후 초기 구간 무시
             if (ts_now - first_data_ts) < PREROLL_SEC and not stable_mode:
-                # STABLE 타이머는 PREROLL 이후부터 카운트
-                stable_timer_base = None
+                if PRINT_PER_FRAME and (processed_frames % 50 == 0):
+                    print(f"PREROLL 진행 중: {(ts_now - first_data_ts):.2f}s")
                 continue
-            # PREROLL 종료 후 첫 진입 시 타이머 시작
-            if 'stable_timer_base' not in locals() or stable_timer_base is None:
-                stable_timer_base = ts_now
 
             # 안정성 판정: 직전 프레임과의 간격이 목표 주기(20 ms)±tol인지 검사
             if last_ts is None:
                 last_ts = ts_now
                 continue
             dt = ts_now - last_ts
+            # --- Diagnostics (A): print first few Δt samples ---
+            if 'diag_dt_prints' not in locals():
+                diag_dt_prints = 0
+            if diag_dt_prints < 20:
+                try:
+                    src = "ns" if (ts_rel_ns is not None) else "wall"
+                    print(f"Δt sample[{diag_dt_prints+1}]: {dt*1e3:.3f} ms (src={src})")
+                    diag_dt_prints += 1
+                except Exception:
+                    pass
             last_ts = ts_now
             if abs(dt - STABLE_T) <= STABLE_TOL:
                 stable_count += 1
             else:
                 stable_count = 0
-
-            # STABLE 진입 타임아웃 검사
-            if (not stable_mode) and (stable_timer_base is not None) and ((ts_now - stable_timer_base) > STABLE_TIMEOUT_SEC):
-                print("ABORT: STABLE 조건을 지정 시간 내 달성하지 못했습니다.")
-                _abort("stable-timeout")
-                break
 
             if not stable_mode:
                 if stable_count >= STABLE_N:
@@ -596,6 +531,8 @@ def camera_consumer():
                     h5_ready = False
                     h5_disabled = False
                 else:
+                    if PRINT_PER_FRAME and (processed_frames % 50 == 0):
+                        print(f"STABILIZING... ({stable_count}/{STABLE_N})")
                     continue
 
             seen += 1  # stable_mode 진입 후에만 카운트
@@ -687,6 +624,9 @@ def camera_consumer():
                     if len(freqs_sorted) >= 2:
                         y = np.array([np.mean(intensity_dict[f]) for f in freqs_sorted], dtype=float)
                         x = np.array([f / 1e9 for f in freqs_sorted], dtype=float)
+                        # 방어: y.max()==0이면 분모 1로
+                        y_max = float(y.max()) if y.size and y.max() > 0 else 1.0
+                        pl_norm = y / y_max
                         # 방어: I_off 계산을 더 타이트/견고하게 (상위 5% 중심)
                         try:
                             q = float(CONTRAST_Q)
@@ -702,94 +642,78 @@ def camera_consumer():
                                 I_off = 1.0
                         except Exception:
                             I_off = 1.0
-                        # PL: 원래대로 max 정규화 (맨 위 ≈ 1.0)
-                        y_max = float(y.max()) if y.size and y.max() > 0 else 1.0
-                        pl_norm = y / y_max
-
-                        # Contrast: 기준(I_off) 대비 양수로 표시 (맨 위가 1.0)
-                        contrast_disp = (y / I_off)
-
+                        contrast_pct = (I_off - y) / I_off * 100.0
+                        if PRINT_PER_FRAME and ((seen - warmup_skip) % mw_steps == 0):
+                            print(f"I_off≈{I_off:.6g} (q={CONTRAST_Q:.2f}, n_top={len(cand)})")
                         # 최신 데이터만 유지 (큐가 가득 차면 가장 오래된 항목 버림)
                         while not plot_queue.empty():
                             try:
                                 plot_queue.get_nowait()
                             except Exception:
                                 break
-                        plot_queue.put_nowait((x, pl_norm, contrast_disp))
-                except Exception:
-                    pass
+                        plot_queue.put_nowait((x, pl_norm, contrast_pct))
+                        if PRINT_PER_FRAME and ((seen - warmup_skip) % 10 == 0):
+                            print(f"PLOT push: n_freqs={len(freqs_sorted)}, x≈[{x[0]:.3f}..{x[-1]:.3f}] GHz")
+                except Exception as e:
+                    if PRINT_PER_FRAME:
+                        print(f"PLOT prepare err: {e}")
 
         except queue.Empty:
             continue
 
     measurement_complete = True
 
-    # HDF5 정리 + ABORT 시 안전 저장/이름 변경
+    # HDF5 정리 및 요약 로그 작성
     try:
+        h5_path = None
         if SAVE_HDF5 and HAS_H5PY and h5 is not None:
             try:
                 h5.flush()
             except Exception:
                 pass
-            fn = None
+            h5_path = h5.filename
+            h5.close()
+        # 요약 정보 준비
+        try:
+            freqs_sorted = sorted(intensity_dict.keys())
+            summary_lines = []
+            summary_lines.append(f"ended_at: {datetime.datetime.now().isoformat()}\n")
+            summary_lines.append(f"result: {'ABORT' if abort_event.is_set() else 'OK'}\n")
+            summary_lines.append(f"frames_captured: {frames_captured}\n")
+            summary_lines.append(f"frames_processed: {sum(len(v) for v in intensity_dict.values())}\n")
+            summary_lines.append(f"unique_freqs: {len(freqs_sorted)}\n")
+            if h5_path:
+                summary_lines.append(f"hdf5: {os.path.basename(h5_path)}\n")
+        except Exception:
+            summary_lines = []
+        # ABORT 시 파일명 변경
+        if abort_event.is_set():
+            # rename data.h5 → data_abort.h5 (동일 폴더)
             try:
-                fn = str(h5.filename)
-            except Exception:
-                pass
-            try:
-                h5.close()
-            except Exception:
-                pass
-            # ABORT면 파일명을 data_abort.h5로 변경
-            try:
-                if abort_event.is_set() and fn and os.path.isfile(fn):
-                    dst = os.path.join(os.path.dirname(fn), "data_abort.h5")
+                if h5_path and os.path.exists(h5_path):
+                    abort_path = os.path.join(run_dir, "data_abort.h5")
                     try:
-                        if os.path.isfile(dst):
-                            os.remove(dst)
+                        if os.path.exists(abort_path):
+                            os.remove(abort_path)
                     except Exception:
                         pass
-                    os.rename(fn, dst)
-                    fn = dst
+                    os.replace(h5_path, abort_path)
+                    summary_lines.append(f"hdf5_renamed: data_abort.h5\n")
+            except Exception as e:
+                summary_lines.append(f"hdf5_rename_error: {e}\n")
+            # abort summary
+            try:
+                with open(os.path.join(run_dir, 'abort_summary.txt'), 'w', encoding='utf-8') as f:
+                    f.writelines(summary_lines)
             except Exception:
                 pass
-            # 요약 로그 작성
+        else:
+            # normal summary
             try:
-                end_ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                summary = []
-                summary.append(f"end_time: {end_ts}")
-                summary.append(f"result: {'ABORT' if abort_event.is_set() else 'OK'}")
-                if abort_event.is_set():
-                    summary.append(f"abort_reason: {abort_reason}")
-                # 사이즈/주파수/카운트 요약
-                try:
-                    iw, ih = _last_image_size
-                    rw, rh = _last_roi_size
-                    summary.append(f"image_size: {iw}x{ih}")
-                    summary.append(f"roi_size: {rw}x{rh}")
-                except Exception:
-                    pass
-                try:
-                    summary.append(f"sdg_freq_hz: {int(SDG_FREQ_HZ)}")
-                except Exception:
-                    pass
-                try:
-                    summary.append(f"frames_captured: {frames_captured}")
-                    summary.append(f"frames_processed: {processed_frames}")
-                    summary.append(f"unique_freqs: {len(intensity_dict.keys())}")
-                except Exception:
-                    pass
-                try:
-                    if fn:
-                        summary.append(f"hdf5_path: {fn}")
-                except Exception:
-                    pass
-                summ_name = "abort_summary.txt" if abort_event.is_set() else "run_summary.txt"
-                with open(os.path.join(run_dir, summ_name), "w", encoding="utf-8") as f:
-                    f.write("\n".join(summary) + "\n")
-                print(f"Summary written → {summ_name}")
-            except Exception as e:
-                print(f"요약 로그 작성 실패: {e}")
+                with open(os.path.join(run_dir, 'run_summary.txt'), 'w', encoding='utf-8') as f:
+                    f.writelines(summary_lines)
+            except Exception:
+                pass
     except Exception:
         pass
 
@@ -811,23 +735,18 @@ def plotter_mainloop():
     last_update = time.time()
     while True:
         try:
-            x, pl_norm, contrast_disp = plot_queue.get(timeout=0.2)
+            x, pl_norm, contrast_pct = plot_queue.get(timeout=0.2)
             if fig is None:
                 fig, (ax_pl, ax_con) = plt.subplots(2, 1, sharex=True)
                 line_pl, = ax_pl.plot(x, pl_norm, marker='o')
-                line_con, = ax_con.plot(x, contrast_disp, marker='o')
+                line_con, = ax_con.plot(x, contrast_pct, marker='o')
                 ax_pl.set_ylabel("PL (norm.)")
-                ax_con.set_ylabel("ODMR PL/IOFF")
+                ax_con.set_ylabel("Contrast (%)")
                 ax_con.set_xlabel("Frequency (GHz)")
                 ax_pl.set_title("Live CW-ODMR")
-                # 보기 개선: +1 오프셋 표기 제거; Contrast는 autoscale로 두되 상한이 1 또는 100 근처
-                try:
-                    ax_pl.ticklabel_format(useOffset=False)
-                except Exception:
-                    pass
             else:
                 line_pl.set_xdata(x); line_pl.set_ydata(pl_norm)
-                line_con.set_xdata(x); line_con.set_ydata(contrast_disp)
+                line_con.set_xdata(x); line_con.set_ydata(contrast_pct)
             # 항상 리림/오토스케일 후 강제 페인트
             try:
                 ax_pl.relim(); ax_pl.autoscale_view()
@@ -838,8 +757,8 @@ def plotter_mainloop():
             plt.pause(0.01)
             last_update = time.time()
         except queue.Empty:
-            # 종료 조건: 측정 완료 또는 abort 이후 일정 시간동안 업데이트 없으면 종료
-            if (measurement_complete or abort_event.is_set()) and (time.time() - last_update) > 0.5:
+            # 종료 조건: 측정 완료 이후 일정 시간동안 업데이트 없으면 종료
+            if measurement_complete and (time.time() - last_update) > 0.5:
                 break
             continue
     try:
@@ -873,7 +792,7 @@ sdg_thread.join()
 
 # 디버깅: intensity_dict에 저장된 데이터 개수 확인
 for freq in sorted(intensity_dict.keys()):
-    pass
+    print(f"DEBUG: 주파수 {freq/1e9:.3f} GHz에 측정된 데이터 개수: {len(intensity_dict[freq])}")
 
 # 각 MW 주파수별 평균 intensity 계산 (각 주파수 당 1000회 측정이 목표)
 frequencies = sorted(intensity_dict.keys())
