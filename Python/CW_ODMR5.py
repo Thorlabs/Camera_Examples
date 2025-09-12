@@ -34,6 +34,9 @@ mw_steps = 20     # 20 스텝 (3 GHz ~ 3.95 GHz)
 # SDG 트리거 주파수(Hz): 카메라 readout 여유가 부족하면 25로 낮춰 테스트
 SDG_FREQ_HZ = 50
 
+# Producer 안전 모드: True면 센서/ROI/비닝 변경을 건드리지 않고 기본값 유지 (last-known-good)
+PRODUCER_SAFE_MODE = True
+
 
 # ROI 영역 설정 (MANUAL 모드에서만 사용; AUTO일 때는 무시되고 중앙 고정 박스 사용)
 roi_y_start, roi_y_end = 400, 801
@@ -319,117 +322,120 @@ def camera_producer():
             # 하드웨어 트리거 사용 시 내부 프레임레이트 제어는 비활성화
             camera.is_frame_rate_control_enabled = False
 
-            # ---- 센서/ROI 초기화: 과거 설정 잔존 방지 (full-frame, 1x1) ----
-            try:
-                # 1x1로 초기화 (가능한 속성 모두 시도)
-                for setter in (
-                    lambda: setattr(camera, "bin_x", 1),
-                    lambda: setattr(camera, "bin_y", 1),
-                    lambda: setattr(camera, "binning", 1),
-                    lambda: camera.set_binx(1),
-                    lambda: camera.set_biny(1),
-                    lambda: camera.set_binning(1),
-                ):
-                    try:
-                        setter()
-                    except Exception:
-                        pass
-                # 전체 센서 크기로 ROI 초기화
-                sensor_w = int(getattr(camera, "sensor_width_pixels", 0) or 0)
-                sensor_h = int(getattr(camera, "sensor_height_pixels", 0) or 0)
-                if sensor_w > 0 and sensor_h > 0:
+            if not PRODUCER_SAFE_MODE:
+                # ---- 센서/ROI 초기화: 과거 설정 잔존 방지 (full-frame, 1x1) ----
+                try:
+                    # 1x1로 초기화 (가능한 속성 모두 시도)
                     for setter in (
-                        lambda: setattr(camera, "roi", (0, 0, sensor_w, sensor_h)),
-                        lambda: camera.set_roi(0, 0, sensor_w, sensor_h),
+                        lambda: setattr(camera, "bin_x", 1),
+                        lambda: setattr(camera, "bin_y", 1),
+                        lambda: setattr(camera, "binning", 1),
+                        lambda: camera.set_binx(1),
+                        lambda: camera.set_biny(1),
+                        lambda: camera.set_binning(1),
                     ):
                         try:
-                            setter(); break
+                            setter()
                         except Exception:
                             pass
-                    print(f"센서 초기화: full-frame {sensor_w}x{sensor_h}, bin=1x1")
-                else:
-                    print("센서 크기 조회 실패: full-frame 초기화 스킵")
-            except Exception as e:
-                print(f"센서/ROI 초기화 중 예외: {e}")
-
-            # ---- 비닝(가능 시 2x2) 먼저 적용 → 이후 ROI 적용 ----
-            try:
-                binned = False
-                for setter in (
-                    lambda: setattr(camera, "bin_x", 2),
-                    lambda: setattr(camera, "bin_y", 2),
-                    lambda: setattr(camera, "binning", 2),
-                    lambda: camera.set_binx(2),
-                    lambda: camera.set_biny(2),
-                    lambda: camera.set_binning(2),
-                ):
-                    try:
-                        setter(); binned = True
-                    except Exception:
-                        pass
-                if binned:
-                    print("HW 비닝 적용: 2x2 (가능한 축에 한해)")
-                else:
-                    print("HW 비닝 미적용: 장치가 해당 속성을 지원하지 않음.")
-            except Exception as e:
-                print(f"HW 비닝 설정 중 예외: {e}")
-
-            # ---- 하드웨어 ROI 설정 (비닝 이후 적용; 정렬 스냅 포함) ----
-            try:
-                # 최신 이미지 크기 재조회 (비닝 반영 후)
-                img_h = int(getattr(camera, "image_height_pixels", 0) or 0)
-                img_w = int(getattr(camera, "image_width_pixels", 0) or 0)
-                if img_h <= 0 or img_w <= 0:
-                    raise RuntimeError("카메라 해상도 조회 실패")
-
-                applied = False
-                if str(ROI_MODE).upper() == "AUTO":
-                    # 중앙 정사각형 또는 직사각형 ROI
-                    if str(ROI_SHAPE).upper() == "RECT":
-                        box_w = int(max(ROI_MIN_SIZE, min(ROI_AUTO_W, img_w)))
-                        box_h = int(max(ROI_MIN_SIZE, min(ROI_AUTO_H, img_h)))
+                    # 전체 센서 크기로 ROI 초기화
+                    sensor_w = int(getattr(camera, "sensor_width_pixels", 0) or 0)
+                    sensor_h = int(getattr(camera, "sensor_height_pixels", 0) or 0)
+                    if sensor_w > 0 and sensor_h > 0:
+                        for setter in (
+                            lambda: setattr(camera, "roi", (0, 0, sensor_w, sensor_h)),
+                            lambda: camera.set_roi(0, 0, sensor_w, sensor_h),
+                        ):
+                            try:
+                                setter(); break
+                            except Exception:
+                                pass
+                        print(f"센서 초기화: full-frame {sensor_w}x{sensor_h}, bin=1x1")
                     else:
-                        box = int(max(ROI_MIN_SIZE, min(ROI_AUTO_SIZE, img_h, img_w)))
-                        box_w = box_h = box
-                    cx = img_w // 2; cy = img_h // 2
-                    x = max(0, cx - box_w // 2)
-                    y = max(0, cy - box_h // 2)
-                    w = min(box_w, img_w - x)
-                    h = min(box_h, img_h - y)
-                    x, y, w, h = _snap8(x, y, w, h, img_w, img_h)
+                        print("센서 크기 조회 실패: full-frame 초기화 스킵")
+                except Exception as e:
+                    print(f"센서/ROI 초기화 중 예외: {e}")
+
+                # ---- 비닝(가능 시 2x2) 먼저 적용 → 이후 ROI 적용 ----
+                try:
+                    binned = False
                     for setter in (
-                        lambda: setattr(camera, "roi", (x, y, w, h)),
-                        lambda: camera.set_roi(x, y, w, h),
+                        lambda: setattr(camera, "bin_x", 2),
+                        lambda: setattr(camera, "bin_y", 2),
+                        lambda: setattr(camera, "binning", 2),
+                        lambda: camera.set_binx(2),
+                        lambda: camera.set_biny(2),
+                        lambda: camera.set_binning(2),
                     ):
                         try:
-                            setter(); applied = True; break
+                            setter(); binned = True
                         except Exception:
                             pass
-                    if applied:
-                        print(f"HW ROI(AUTO) 적용: x={x}, y={y}, w={w}, h={h}")
+                    if binned:
+                        print("HW 비닝 적용: 2x2 (가능한 축에 한해)")
                     else:
-                        print("HW ROI(AUTO) 적용 실패: 장치에서 ROI 속성을 지원하지 않음 (소프트웨어 크롭으로 대체).")
-                else:
-                    # MANUAL 경계 스냅 후 적용
-                    req_x = int(roi_x_start)
-                    req_y = int(roi_y_start)
-                    req_w = int(max(ROI_MIN_SIZE, roi_x_end - roi_x_start))
-                    req_h = int(max(ROI_MIN_SIZE, roi_y_end - roi_y_start))
-                    x, y, w, h = _snap8(req_x, req_y, req_w, req_h, img_w, img_h)
-                    for setter in (
-                        lambda: setattr(camera, "roi", (x, y, w, h)),
-                        lambda: camera.set_roi(x, y, w, h),
-                    ):
-                        try:
-                            setter(); applied = True; break
-                        except Exception:
-                            pass
-                    if applied:
-                        print(f"HW ROI(MANUAL) 적용: x={x}, y={y}, w={w}, h={h}")
+                        print("HW 비닝 미적용: 장치가 해당 속성을 지원하지 않음.")
+                except Exception as e:
+                    print(f"HW 비닝 설정 중 예외: {e}")
+
+                # ---- 하드웨어 ROI 설정 (비닝 이후 적용; 정렬 스냅 포함) ----
+                try:
+                    # 최신 이미지 크기 재조회 (비닝 반영 후)
+                    img_h = int(getattr(camera, "image_height_pixels", 0) or 0)
+                    img_w = int(getattr(camera, "image_width_pixels", 0) or 0)
+                    if img_h <= 0 or img_w <= 0:
+                        raise RuntimeError("카메라 해상도 조회 실패")
+
+                    applied = False
+                    if str(ROI_MODE).upper() == "AUTO":
+                        # 중앙 정사각형 또는 직사각형 ROI
+                        if str(ROI_SHAPE).upper() == "RECT":
+                            box_w = int(max(ROI_MIN_SIZE, min(ROI_AUTO_W, img_w)))
+                            box_h = int(max(ROI_MIN_SIZE, min(ROI_AUTO_H, img_h)))
+                        else:
+                            box = int(max(ROI_MIN_SIZE, min(ROI_AUTO_SIZE, img_h, img_w)))
+                            box_w = box_h = box
+                        cx = img_w // 2; cy = img_h // 2
+                        x = max(0, cx - box_w // 2)
+                        y = max(0, cy - box_h // 2)
+                        w = min(box_w, img_w - x)
+                        h = min(box_h, img_h - y)
+                        x, y, w, h = _snap8(x, y, w, h, img_w, img_h)
+                        for setter in (
+                            lambda: setattr(camera, "roi", (x, y, w, h)),
+                            lambda: camera.set_roi(x, y, w, h),
+                        ):
+                            try:
+                                setter(); applied = True; break
+                            except Exception:
+                                pass
+                        if applied:
+                            print(f"HW ROI(AUTO) 적용: x={x}, y={y}, w={w}, h={h}")
+                        else:
+                            print("HW ROI(AUTO) 적용 실패: 장치에서 ROI 속성을 지원하지 않음 (소프트웨어 크롭으로 대체).")
                     else:
-                        print("HW ROI(MANUAL) 적용 실패: 장치에서 ROI 속성을 지원하지 않음 (소프트웨어 크롭으로 대체).")
-            except Exception as e:
-                print(f"HW ROI 설정 중 예외: {e}")
+                        # MANUAL 경계 스냅 후 적용
+                        req_x = int(roi_x_start)
+                        req_y = int(roi_y_start)
+                        req_w = int(max(ROI_MIN_SIZE, roi_x_end - roi_x_start))
+                        req_h = int(max(ROI_MIN_SIZE, roi_y_end - roi_y_start))
+                        x, y, w, h = _snap8(req_x, req_y, req_w, req_h, img_w, img_h)
+                        for setter in (
+                            lambda: setattr(camera, "roi", (x, y, w, h)),
+                            lambda: camera.set_roi(x, y, w, h),
+                        ):
+                            try:
+                                setter(); applied = True; break
+                            except Exception:
+                                pass
+                        if applied:
+                            print(f"HW ROI(MANUAL) 적용: x={x}, y={y}, w={w}, h={h}")
+                        else:
+                            print("HW ROI(MANUAL) 적용 실패: 장치에서 ROI 속성을 지원하지 않음 (소프트웨어 크롭으로 대체).")
+                except Exception as e:
+                    print(f"HW ROI 설정 중 예외: {e}")
+            else:
+                print("SAFE: 하드웨어 ROI/비닝 변경 생략 (기기 기본값 유지)")
 
             # 적용 결과 확인용 이미지 크기 출력
             try:
