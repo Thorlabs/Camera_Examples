@@ -169,19 +169,17 @@ def sdg_control():
         sdg.write("C2:BSWV WVTP,PULSE")
         sdg.write("C2:BSWV FRQ,50")
         sdg.write("C2:OUTP LOAD,HZ")
-        sdg.write("C2:BSWV AMP,3.0")      # 0–3.0 V
-        sdg.write("C2:BSWV OFST,1.5")     # center @ 1.5 V
+        # Use explicit levels only (avoid AMP/OFST overrides)
+        sdg.write("C2:BSWV HLEV,3.0")   # High level = 3.0 V (baseline)
+        sdg.write("C2:BSWV LLEV,0.0")   # Low  level = 0.0 V (pulse)
         sdg.write("C2:BSWV WIDTH,2e-4")   # 200 µs (LOW 폭으로 사용; step time보다 짧게)
-        sdg.write("C2:BSWV HLEV,0")    # Force High level = 0 V
-        sdg.write("C2:BSWV LLEV,3.0")  # Force Low level = 3 V (baseline High, short Low pulse)
-        # 기본 HIGH, 짧은 LOW를 위해 polarity/duty 설정 시도
+        # Baseline HIGH (3 V), short LOW (~200 us) each 20 ms
+        sdg.write("C2:BSWV DUTY,99")   # 99% High → 1% Low at 50 Hz ≈ 200 µs
+        # Some firmware may ignore POL, so this is best-effort only
         try:
-            sdg.write("C2:BSWV POL,NEG")  # 지원 시: 펄스 낮아지는 형태(LOW 펄스)
+            sdg.write("C2:BSWV POL,POS")
         except Exception:
-            try:
-                sdg.write("C2:BSWV DUTY,99")  # 대안: 거의 항상 HIGH (펄스 LOW 구간을 매우 짧게)
-            except Exception:
-                pass
+            pass
         sdg.write("C2:OUTP OFF")  # 안정 진입 신호 전까지 OFF
         # --- Debug: dump CH2 config ---
         try:
