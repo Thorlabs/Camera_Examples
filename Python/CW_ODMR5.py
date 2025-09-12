@@ -42,6 +42,10 @@ ROI_MODE = "AUTO"          # 실험 중에는 AUTO 권장, 필요 시 'MANUAL'�
 ROI_AUTO_SIZE = 512         # AUTO 모드에서 사용할 정사각형 ROI 크기(픽셀) — 샘플(≈500–1000px)에 맞춤
 ROI_MIN_SIZE  = 64          # 어떤 경우에도 최소 보장 크기(너무 작은 ROI 방지)
 
+# ----- Contrast baseline 설정 (딥이 ~1% 수준일 때 더 타이트/견고하게) -----
+CONTRAST_Q = 0.95        # 상위 quantile (예: 0.95 → 상위 5%)
+CONTRAST_MIN_SAMPLES = 5 # 상위 구간에서 최소 샘플 수 (부족하면 max(y) 사용)
+
 # 검증된 ROI 경계 (카메라 해상도에 맞게 런타임에 계산)
 roi_y0_valid = None
 roi_y1_valid = None
@@ -596,15 +600,24 @@ def camera_consumer():
                         # 방어: y.max()==0이면 분모 1로
                         y_max = float(y.max()) if y.size and y.max() > 0 else 1.0
                         pl_norm = y / y_max
-                        # 방어: I_off 계산 시 분모 0/NaN 예방
+                        # 방어: I_off 계산을 더 타이트/견고하게 (상위 5% 중심)
                         try:
-                            I_off_candidates = y[y >= np.quantile(y, 0.80)]
-                            I_off = float(I_off_candidates.mean()) if I_off_candidates.size else float(y.mean() if y.size else 1.0)
-                            if I_off == 0:
+                            q = float(CONTRAST_Q)
+                            q = min(max(q, 0.80), 0.995)  # 안전 범위 클램프
+                            thresh = np.quantile(y, q)
+                            cand = y[y >= thresh]
+                            if cand.size >= max(CONTRAST_MIN_SAMPLES, int(0.05*len(y))):
+                                # 상위 구간의 중앙값과 평균을 혼합해 outlier에 덜 민감
+                                I_off = 0.5*float(np.median(cand)) + 0.5*float(np.mean(cand))
+                            else:
+                                I_off = float(y.max()) if y.size else 1.0
+                            if not np.isfinite(I_off) or I_off <= 0:
                                 I_off = 1.0
                         except Exception:
                             I_off = 1.0
                         contrast_pct = (I_off - y) / I_off * 100.0
+                        if PRINT_PER_FRAME and ((seen - warmup_skip) % mw_steps == 0):
+                            print(f"I_off≈{I_off:.6g} (q={CONTRAST_Q:.2f}, n_top={len(cand)})")
                         # 최신 데이터만 유지 (큐가 가득 차면 가장 오래된 항목 버림)
                         while not plot_queue.empty():
                             try:
