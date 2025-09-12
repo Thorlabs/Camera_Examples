@@ -46,6 +46,7 @@ ROI_MIN_SIZE  = 64          # 어떤 경우에도 최소 보장 크기(너무 �
 CONTRAST_Q = 0.95        # 상위 quantile (예: 0.95 → 상위 5%)
 CONTRAST_MIN_SAMPLES = 5 # 상위 구간에서 최소 샘플 수 (부족하면 max(y) 사용)
 
+
 # 검증된 ROI 경계 (카메라 해상도에 맞게 런타임에 계산)
 roi_y0_valid = None
 roi_y1_valid = None
@@ -254,8 +255,42 @@ def camera_producer():
             # 하드웨어 트리거 사용 시 내부 프레임레이트 제어는 비활성화
             camera.is_frame_rate_control_enabled = False
 
+            # ---- 센서/ROI 초기화: 과거 설정 잔존 방지 (full-frame, 1x1) ----
+            try:
+                # 1x1로 초기화 (가능한 속성 모두 시도)
+                for setter in (
+                    lambda: setattr(camera, "bin_x", 1),
+                    lambda: setattr(camera, "bin_y", 1),
+                    lambda: setattr(camera, "binning", 1),
+                    lambda: camera.set_binx(1),
+                    lambda: camera.set_biny(1),
+                    lambda: camera.set_binning(1),
+                ):
+                    try:
+                        setter()
+                    except Exception:
+                        pass
+                # 전체 센서 크기로 ROI 초기화
+                sensor_w = int(getattr(camera, "sensor_width_pixels", 0) or 0)
+                sensor_h = int(getattr(camera, "sensor_height_pixels", 0) or 0)
+                if sensor_w > 0 and sensor_h > 0:
+                    for setter in (
+                        lambda: setattr(camera, "roi", (0, 0, sensor_w, sensor_h)),
+                        lambda: camera.set_roi(0, 0, sensor_w, sensor_h),
+                    ):
+                        try:
+                            setter(); break
+                        except Exception:
+                            pass
+                    print(f"센서 초기화: full-frame {sensor_w}x{sensor_h}, bin=1x1")
+                else:
+                    print("센서 크기 조회 실패: full-frame 초기화 스킵")
+            except Exception as e:
+                print(f"센서/ROI 초기화 중 예외: {e}")
+
             # ---- 하드웨어 ROI/비닝 설정 (장치 지원 시) ----
             try:
+                # full-frame 초기화 이후 최신 이미지 크기 재조회
                 img_h = int(getattr(camera, "image_height_pixels", 0) or 0)
                 img_w = int(getattr(camera, "image_width_pixels", 0) or 0)
                 if img_h <= 0 or img_w <= 0:
@@ -326,6 +361,12 @@ def camera_producer():
                     print("HW 비닝 미적용: 장치가 해당 속성을 지원하지 않음.")
             except Exception as e:
                 print(f"HW 비닝 설정 중 예외: {e}")
+
+            # 적용 결과 확인용 이미지 크기 출력
+            try:
+                print(f"적용 후 image size: {camera.image_width_pixels} x {camera.image_height_pixels}")
+            except Exception:
+                pass
             # ----------------------------------------------
 
             # 카메라가 보고하는 실제 해상도 기준으로 ROI 경계 확정
@@ -597,9 +638,6 @@ def camera_consumer():
                     if len(freqs_sorted) >= 2:
                         y = np.array([np.mean(intensity_dict[f]) for f in freqs_sorted], dtype=float)
                         x = np.array([f / 1e9 for f in freqs_sorted], dtype=float)
-                        # 방어: y.max()==0이면 분모 1로
-                        y_max = float(y.max()) if y.size and y.max() > 0 else 1.0
-                        pl_norm = y / y_max
                         # 방어: I_off 계산을 더 타이트/견고하게 (상위 5% 중심)
                         try:
                             q = float(CONTRAST_Q)
@@ -615,7 +653,13 @@ def camera_consumer():
                                 I_off = 1.0
                         except Exception:
                             I_off = 1.0
-                        contrast_pct = (I_off - y) / I_off * 100.0
+                        # PL: 원래대로 max 정규화 (맨 위 ≈ 1.0)
+                        y_max = float(y.max()) if y.size and y.max() > 0 else 1.0
+                        pl_norm = y / y_max
+
+                        # Contrast: 기준(I_off) 대비 양수로 표시 (맨 위가 1.0)
+                        contrast_disp = (y / I_off)
+
                         if PRINT_PER_FRAME and ((seen - warmup_skip) % mw_steps == 0):
                             print(f"I_off≈{I_off:.6g} (q={CONTRAST_Q:.2f}, n_top={len(cand)})")
                         # 최신 데이터만 유지 (큐가 가득 차면 가장 오래된 항목 버림)
@@ -624,7 +668,7 @@ def camera_consumer():
                                 plot_queue.get_nowait()
                             except Exception:
                                 break
-                        plot_queue.put_nowait((x, pl_norm, contrast_pct))
+                        plot_queue.put_nowait((x, pl_norm, contrast_disp))
                         if PRINT_PER_FRAME and ((seen - warmup_skip) % 10 == 0):
                             print(f"PLOT push: n_freqs={len(freqs_sorted)}, x≈[{x[0]:.3f}..{x[-1]:.3f}] GHz")
                 except Exception as e:
@@ -661,18 +705,23 @@ def plotter_mainloop():
     last_update = time.time()
     while True:
         try:
-            x, pl_norm, contrast_pct = plot_queue.get(timeout=0.2)
+            x, pl_norm, contrast_disp = plot_queue.get(timeout=0.2)
             if fig is None:
                 fig, (ax_pl, ax_con) = plt.subplots(2, 1, sharex=True)
                 line_pl, = ax_pl.plot(x, pl_norm, marker='o')
-                line_con, = ax_con.plot(x, contrast_pct, marker='o')
+                line_con, = ax_con.plot(x, contrast_disp, marker='o')
                 ax_pl.set_ylabel("PL (norm.)")
-                ax_con.set_ylabel("Contrast (%)")
+                ax_con.set_ylabel("ODMR PL/IOFF")
                 ax_con.set_xlabel("Frequency (GHz)")
                 ax_pl.set_title("Live CW-ODMR")
+                # 보기 개선: +1 오프셋 표기 제거; Contrast는 autoscale로 두되 상한이 1 또는 100 근처
+                try:
+                    ax_pl.ticklabel_format(useOffset=False)
+                except Exception:
+                    pass
             else:
                 line_pl.set_xdata(x); line_pl.set_ydata(pl_norm)
-                line_con.set_xdata(x); line_con.set_ydata(contrast_pct)
+                line_con.set_xdata(x); line_con.set_ydata(contrast_disp)
             # 항상 리림/오토스케일 후 강제 페인트
             try:
                 ax_pl.relim(); ax_pl.autoscale_view()
