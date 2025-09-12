@@ -105,14 +105,6 @@ run_stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 run_dir = os.path.join(code_dir, run_stamp)
 os.makedirs(run_dir, exist_ok=True)
 
-# 인덱스(i) -> 폴더 경로 매핑, 폴더명 예: 3.00GHz, 3.05GHz, ...
-freq_paths = []
-for i in range(mw_steps):
-    f_hz = mw_start + i * mw_step
-    folder_name = f"{f_hz/1e9:.2f}GHz"
-    folder_path = os.path.join(run_dir, folder_name)
-    os.makedirs(folder_path, exist_ok=True)
-    freq_paths.append(folder_path)
 
 # 런타임 플래그
 PRINT_PER_FRAME = True      # 프레임당 1회 로그 출력 (프레임 번호 + 주파수)
@@ -599,13 +591,13 @@ def camera_consumer():
                     h5_ready = False
                     h5_disabled = True
             elif SAVE_TXT:
-                # 텍스트 폴백: 주파수별 폴더 내 단일 파일에 append (IO 폭주 방지)
+                # 텍스트 폴백: 런 폴더 내 단일 파일에 append
                 try:
-                    # 주파수별 폴더는 상단에서 이미 생성됨 (freq_paths)
-                    freq_folder = freq_paths[step_index]
-                    txt_path = os.path.join(freq_folder, "intensity.txt")
-                    # frame_num, freq(Hz), sum
+                    txt_path = os.path.join(run_dir, "intensity.txt")
+                    new_file = not os.path.exists(txt_path)
                     with open(txt_path, "a", encoding="utf-8") as f:
+                        if new_file:
+                            f.write("frame_num\tfreq_hz\tintensity_sum\n")
                         f.write(f"{int(frame_num)}\t{float(freq)}\t{int(s)}\n")
                 except Exception as e:
                     print(f"TXT 저장 실패 (frame {frame_num}): {e}")
