@@ -24,3 +24,6 @@ __pycache__/
 
 # macOS 시스템 파일
 *.DS_Store
+
+# 옛날 파일
+*_old.py
