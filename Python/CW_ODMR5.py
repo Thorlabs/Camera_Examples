@@ -152,6 +152,12 @@ def sdg_control():
         sdg.write("C1:BSWV OFST,1.65")    # 0–3.3 V level (centered)
         # LVTTL 신호 및 200µs 최소 펄스 폭 권고에 맞춤
         sdg.write("C1:BSWV WIDTH,2e-4")   # 200 µs pulse width (>= 100 µs min)
+        # --- Debug: dump CH1 config ---
+        try:
+            cfg1 = sdg.query("C1:BSWV?")
+            print("[SDG] CH1 BSWV:", cfg1.strip())
+        except Exception as e:
+            print("[SDG] CH1 BSWV? query failed:", e)
     except Exception as e:
         print("SDG 초기 설정 오류:", e)
         return
@@ -175,6 +181,12 @@ def sdg_control():
             except Exception:
                 pass
         sdg.write("C2:OUTP OFF")  # 안정 진입 신호 전까지 OFF
+        # --- Debug: dump CH2 config ---
+        try:
+            cfg2 = sdg.query("C2:BSWV?")
+            print("[SDG] CH2 BSWV:", cfg2.strip())
+        except Exception as e:
+            print("[SDG] CH2 BSWV? query failed:", e)
     except Exception as e:
         print("SDG CH2 초기 설정 오류:", e)
 
