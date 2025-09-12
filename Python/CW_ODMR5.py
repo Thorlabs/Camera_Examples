@@ -172,7 +172,28 @@ frames_captured = 0
 capture_lock = threading.Lock()
 camera_ready = False  # 카메라가 ARM되면 True로 설정
 measurement_complete = False
+
 synth_start_event = threading.Event()  # 연속 프레임 안정 진입 시 SynthHD(CH2) 시작 신호
+
+# --- Abort / Diagnostics ---
+abort_event = threading.Event()
+abort_reason = None             # "no-frames" | "stable-timeout" | "keyboard" | "user" | other
+
+# WAIT/타임아웃 파라미터
+WAIT_LOG_INTERVAL = 2.0       # WAIT 로그 주기 (초)
+MAX_WAIT_STRIKES  = 8         # WAIT 연속 횟수 초과 시 abort (≈ 16 s)
+STABLE_TIMEOUT_SEC = 60.0     # PREROLL 이후 STABLE 미진입 타임아웃
+
+# 최근 적용된 이미지/ROI 크기(요약 로그용)
+_last_image_size = (None, None)  # (w,h)
+_last_roi_size   = (None, None)  # (w,h)
+
+def _abort(reason: str):
+    """Set global abort with a single reason exactly once."""
+    global abort_reason
+    if not abort_event.is_set():
+        abort_reason = reason
+        abort_event.set()
 
 # -----------------------------------------
 # SDG2082x 제어 함수 (PyVISA 이용)
@@ -245,6 +266,10 @@ def sdg_control():
 
     global frames_captured
     while True:
+        # 비상정지 즉시 종료
+        if abort_event.is_set():
+            print("ABORT 수신: SDG 출력 OFF 후 종료")
+            break
         with capture_lock:
             if frames_captured >= n_frames:
                 break
@@ -401,6 +426,11 @@ def camera_producer():
             # 적용 결과 확인용 이미지 크기 출력
             try:
                 print(f"적용 후 image size: {camera.image_width_pixels} x {camera.image_height_pixels}")
+                try:
+                    global _last_image_size
+                    _last_image_size = (int(camera.image_width_pixels), int(camera.image_height_pixels))
+                except Exception:
+                    pass
             except Exception:
                 pass
             # 권장 안내 메시지 추가
@@ -414,6 +444,11 @@ def camera_producer():
             try:
                 _validate_and_set_roi_bounds(camera.image_height_pixels, camera.image_width_pixels)
                 _print_roi_recommendation(roi_x1_valid - roi_x0_valid, roi_y1_valid - roi_y0_valid, SDG_FREQ_HZ)
+                try:
+                    global _last_roi_size
+                    _last_roi_size = (int(roi_x1_valid - roi_x0_valid), int(roi_y1_valid - roi_y0_valid))
+                except Exception:
+                    pass
             except Exception as e:
                 print(f"ROI 경계 확정 실패: {e}")
 
@@ -426,6 +461,7 @@ def camera_producer():
 
             last_report = time.time()
             last_frames_local = 0
+            wait_strikes = 0
 
             try:
                 while True:
@@ -456,17 +492,26 @@ def camera_producer():
                             frames_captured += 1
                         last_frames_local = frames_captured
                         last_report = time.time()
+                        # 프레임을 받기 시작하면 스트라이크 리셋
+                        wait_strikes = 0
                         # 디버깅: 매 1000프레임마다 진행상황 출력
                         if frames_captured % 1000 == 0:
                             print(f"DEBUG: 현재까지 {frames_captured} 프레임 수집됨")
-                    # 외부 트리거 대기 상태 감시: 일정 시간 프레임이 없으면 안내 로그
-                    if time.time() - last_report > 2.0 and frames_captured == last_frames_local:
-                        print("WAIT: 아직 수신 프레임 없음 (외부 트리거 대기 중). 트리거 케이블/극성/레벨을 확인하세요.")
+                    # 외부 트리거 대기 상태 감시: 일정 시간 프레임이 없으면 안내 로그 및 abort 처리
+                    if time.time() - last_report > WAIT_LOG_INTERVAL and frames_captured == last_frames_local:
+                        wait_strikes += 1
+                        print(f"WAIT[{wait_strikes}/{MAX_WAIT_STRIKES}]: 아직 수신 프레임 없음 (외부 트리거 대기 중). 트리거 케이블/극성/레벨을 확인하세요.")
                         last_report = time.time()
-                    # 프레임 번호 및 현재까지 수집된 프레임 정보 출력
-                    # 삭제됨: print(f"프레임 #{frame.frame_count} 저장 (총 {frames_captured}/{n_frames})")
+                        if wait_strikes >= MAX_WAIT_STRIKES:
+                            print("ABORT: 프레임 무수신 상태가 지속되어 측정을 중단합니다.")
+                            _abort("no-frames")
+                            break
+                    elif frames_captured != last_frames_local:
+                        # 프레임을 받기 시작하면 스트라이크 리셋
+                        wait_strikes = 0
             except KeyboardInterrupt:
                 print("카메라 Producer 종료 (KeyboardInterrupt)")
+                _abort("keyboard")
             finally:
                 camera.disarm()
                 # 소비자 종료 신호
@@ -515,8 +560,11 @@ def camera_consumer():
     # 카메라 프레임카운트에 의존하지 않도록 로컬 카운터 사용
     seen = 0
 
+    stable_timer_base = None
     while processed_frames < target_frames:
         try:
+            if abort_event.is_set():
+                break
             meta, roi = frame_queue.get(timeout=0.5)
             # 종료 신호 처리
             if meta is None:
@@ -544,7 +592,12 @@ def camera_consumer():
             if (ts_now - first_data_ts) < PREROLL_SEC and not stable_mode:
                 if PRINT_PER_FRAME and (processed_frames % 50 == 0):
                     print(f"PREROLL 진행 중: {(ts_now - first_data_ts):.2f}s")
+                # STABLE 타이머는 PREROLL 이후부터 카운트
+                stable_timer_base = None
                 continue
+            # PREROLL 종료 후 첫 진입 시 타이머 시작
+            if 'stable_timer_base' not in locals() or stable_timer_base is None:
+                stable_timer_base = ts_now
 
             # 안정성 판정: 직전 프레임과의 간격이 목표 주기(20 ms)±tol인지 검사
             if last_ts is None:
@@ -566,6 +619,12 @@ def camera_consumer():
                 stable_count += 1
             else:
                 stable_count = 0
+
+            # STABLE 진입 타임아웃 검사
+            if (not stable_mode) and (stable_timer_base is not None) and ((ts_now - stable_timer_base) > STABLE_TIMEOUT_SEC):
+                print("ABORT: STABLE 조건을 지정 시간 내 달성하지 못했습니다.")
+                _abort("stable-timeout")
+                break
 
             if not stable_mode:
                 if stable_count >= STABLE_N:
@@ -722,10 +781,74 @@ def camera_consumer():
 
     measurement_complete = True
 
-    # HDF5 정리
+    # HDF5 정리 + ABORT 시 안전 저장/이름 변경
     try:
         if SAVE_HDF5 and HAS_H5PY and h5 is not None:
-            h5.close()
+            try:
+                h5.flush()
+            except Exception:
+                pass
+            fn = None
+            try:
+                fn = str(h5.filename)
+            except Exception:
+                pass
+            try:
+                h5.close()
+            except Exception:
+                pass
+            # ABORT면 파일명을 data_abort.h5로 변경
+            try:
+                if abort_event.is_set() and fn and os.path.isfile(fn):
+                    dst = os.path.join(os.path.dirname(fn), "data_abort.h5")
+                    try:
+                        if os.path.isfile(dst):
+                            os.remove(dst)
+                    except Exception:
+                        pass
+                    os.rename(fn, dst)
+                    fn = dst
+            except Exception:
+                pass
+            # 요약 로그 작성
+            try:
+                end_ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                summary = []
+                summary.append(f"end_time: {end_ts}")
+                summary.append(f"result: {'ABORT' if abort_event.is_set() else 'OK'}")
+                if abort_event.is_set():
+                    summary.append(f"abort_reason: {abort_reason}")
+                # 사이즈/주파수/카운트 요약
+                try:
+                    iw, ih = _last_image_size
+                    rw, rh = _last_roi_size
+                    summary.append(f"image_size: {iw}x{ih}")
+                    summary.append(f"roi_size: {rw}x{rh}")
+                except Exception:
+                    pass
+                try:
+                    # STABLE_T가 0.020이라면 50 Hz
+                    sdg_hz = int(round(1.0 / 0.020))
+                    summary.append(f"sdg_freq_hz: {sdg_hz}")
+                except Exception:
+                    pass
+                try:
+                    summary.append(f"frames_captured: {frames_captured}")
+                    summary.append(f"frames_processed: {processed_frames}")
+                    summary.append(f"unique_freqs: {len(intensity_dict.keys())}")
+                except Exception:
+                    pass
+                try:
+                    if fn:
+                        summary.append(f"hdf5_path: {fn}")
+                except Exception:
+                    pass
+                summ_name = "abort_summary.txt" if abort_event.is_set() else "run_summary.txt"
+                with open(os.path.join(run_dir, summ_name), "w", encoding="utf-8") as f:
+                    f.write("\n".join(summary) + "\n")
+                print(f"Summary written → {summ_name}")
+            except Exception as e:
+                print(f"요약 로그 작성 실패: {e}")
     except Exception:
         pass
 
@@ -774,8 +897,8 @@ def plotter_mainloop():
             plt.pause(0.01)
             last_update = time.time()
         except queue.Empty:
-            # 종료 조건: 측정 완료 이후 일정 시간동안 업데이트 없으면 종료
-            if measurement_complete and (time.time() - last_update) > 0.5:
+            # 종료 조건: 측정 완료 또는 abort 이후 일정 시간동안 업데이트 없으면 종료
+            if (measurement_complete or abort_event.is_set()) and (time.time() - last_update) > 0.5:
                 break
             continue
     try:
