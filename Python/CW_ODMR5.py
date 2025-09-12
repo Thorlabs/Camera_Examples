@@ -736,17 +736,44 @@ def plotter_mainloop():
     while True:
         try:
             x, pl_norm, contrast_pct = plot_queue.get(timeout=0.2)
+            try:
+                contrast_pl = 1.0 - (np.asarray(contrast_pct, dtype=float) / 100.0)
+            except Exception:
+                # Fallback if a scalar sneaks in
+                contrast_pl = 1.0 - (float(contrast_pct) / 100.0)
             if fig is None:
                 fig, (ax_pl, ax_con) = plt.subplots(2, 1, sharex=True)
                 line_pl, = ax_pl.plot(x, pl_norm, marker='o')
-                line_con, = ax_con.plot(x, contrast_pct, marker='o')
+                line_con, = ax_con.plot(x, contrast_pl, marker='o')
                 ax_pl.set_ylabel("PL (norm.)")
-                ax_con.set_ylabel("Contrast (%)")
+                ax_con.set_ylabel("1 − ΔPL/PL (norm.)")
                 ax_con.set_xlabel("Frequency (GHz)")
                 ax_pl.set_title("Live CW-ODMR")
+                # Force top at 1.0; bottom a bit below min for visibility
+                try:
+                    ymin_pl = float(np.min(pl_norm)) if hasattr(pl_norm, '__len__') else float(pl_norm)
+                except Exception:
+                    ymin_pl = 0.0
+                try:
+                    ymin_con = float(np.min(contrast_pl)) if hasattr(contrast_pl, '__len__') else float(contrast_pl)
+                except Exception:
+                    ymin_con = 0.0
+                ax_pl.set_ylim(max(0.0, ymin_pl - 0.001), 1.0)
+                ax_con.set_ylim(max(0.0, ymin_con - 0.001), 1.0)
             else:
                 line_pl.set_xdata(x); line_pl.set_ydata(pl_norm)
-                line_con.set_xdata(x); line_con.set_ydata(contrast_pct)
+                line_con.set_xdata(x); line_con.set_ydata(contrast_pl)
+                # Force top at 1.0; bottom a bit below min for visibility
+                try:
+                    ymin_pl = float(np.min(pl_norm)) if hasattr(pl_norm, '__len__') else float(pl_norm)
+                except Exception:
+                    ymin_pl = 0.0
+                try:
+                    ymin_con = float(np.min(contrast_pl)) if hasattr(contrast_pl, '__len__') else float(contrast_pl)
+                except Exception:
+                    ymin_con = 0.0
+                ax_pl.set_ylim(max(0.0, ymin_pl - 0.001), 1.0)
+                ax_con.set_ylim(max(0.0, ymin_con - 0.001), 1.0)
             # 항상 리림/오토스케일 후 강제 페인트
             try:
                 ax_pl.relim(); ax_pl.autoscale_view()
