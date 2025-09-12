@@ -27,3 +27,6 @@ __pycache__/
 
 # 옛날 파일
 *_old.py
+
+# txt 파일
+*.txt
