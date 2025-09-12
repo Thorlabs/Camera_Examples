@@ -172,6 +172,8 @@ def sdg_control():
         sdg.write("C2:BSWV AMP,3.0")      # 0–3.0 V
         sdg.write("C2:BSWV OFST,1.5")     # center @ 1.5 V
         sdg.write("C2:BSWV WIDTH,2e-4")   # 200 µs (LOW 폭으로 사용; step time보다 짧게)
+        sdg.write("C2:BSWV HLEV,0")    # Force High level = 0 V
+        sdg.write("C2:BSWV LLEV,3.0")  # Force Low level = 3 V (baseline High, short Low pulse)
         # 기본 HIGH, 짧은 LOW를 위해 polarity/duty 설정 시도
         try:
             sdg.write("C2:BSWV POL,NEG")  # 지원 시: 펄스 낮아지는 형태(LOW 펄스)
