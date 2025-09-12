@@ -35,12 +35,31 @@ mw_steps = 20     # 20 스텝 (3 GHz ~ 3.95 GHz)
 roi_y_start, roi_y_end = 400, 801
 roi_x_start, roi_x_end = 550, 1001
 
-# ROI 모드: 'AUTO' or 'MANUAL'
-#  - AUTO  : 카메라 프레임 중앙에 고정 박스(ROI_AUTO_SIZE x ROI_AUTO_SIZE)
+# ROI 모드: 'AUTO', 'MANUAL', 'PRESET'
+#  - AUTO  : 카메라 프레임 중앙에 고정 박스(ROI_AUTO_SIZE x ROI_AUTO_SIZE 또는 RECT)
 #  - MANUAL: 아래 roi_* 경계를 사용 (이미지 경계로 자동 보정)
-ROI_MODE = "AUTO"          # 실험 중에는 AUTO 권장, 필요 시 'MANUAL'로 변경
+#  - PRESET: ROI_PRESETS에서 인덱스 선택
+ROI_MODE = "AUTO"          # 실험 중에는 AUTO 권장, 필요 시 'MANUAL' 또는 'PRESET'로 변경
 ROI_AUTO_SIZE = 512         # AUTO 모드에서 사용할 정사각형 ROI 크기(픽셀) — 샘플(≈500–1000px)에 맞춤
 ROI_MIN_SIZE  = 64          # 어떤 경우에도 최소 보장 크기(너무 작은 ROI 방지)
+
+# AUTO ROI 모양: 'SQUARE' or 'RECT'
+ROI_SHAPE = "SQUARE"          # 'SQUARE'면 ROI_AUTO_SIZE 사용, 'RECT'면 아래 W/H 사용
+ROI_AUTO_W = 640               # RECT 모드일 때 사용 (가로)
+ROI_AUTO_H = 360               # RECT 모드일 때 사용 (세로)
+
+# PRESET 모드: 여러 사전 정의 ROI를 인덱스로 선택
+# 각 항목은 (x0, y0, w, h). 카메라 해상도 내에서 자동 클램프됨
+ROI_PRESETS = [
+    (0, 0, 512, 512),
+    (100, 100, 800, 300),
+    (200, 50,  1024, 256),
+]
+ROI_PRESET_INDEX = 0           # ROI_MODE='PRESET'일 때 사용할 인덱스
+
+# 픽셀 수 기반 권장 임계치 (readout 부담 진단용)
+PIXELS_WARN_50HZ = 250_000     # ≈ 500×500 → 50 Hz에 경계선
+PIXELS_WARN_25HZ = 600_000     # 25 Hz에서도 부담될 수 있는 수준
 
 # ----- Contrast baseline 설정 (딥이 ~1% 수준일 때 더 타이트/견고하게) -----
 CONTRAST_Q = 0.95        # 상위 quantile (예: 0.95 → 상위 5%)
@@ -55,20 +74,38 @@ roi_x1_valid = None
 
 def _validate_and_set_roi_bounds(img_h, img_w):
     global roi_y0_valid, roi_y1_valid, roi_x0_valid, roi_x1_valid
-    # AUTO 모드: 중앙 고정 박스
-    if str(ROI_MODE).upper() == "AUTO":
-        box = int(max(ROI_MIN_SIZE, min(ROI_AUTO_SIZE, img_h, img_w)))
-        cy = img_h // 2
-        cx = img_w // 2
-        y0 = max(0, cy - box // 2)
-        y1 = min(img_h, y0 + box)
-        x0 = max(0, cx - box // 2)
-        x1 = min(img_w, x0 + box)
-        h = y1 - y0
-        w = x1 - x0
+    mode = str(ROI_MODE).upper()
+    if mode == "AUTO":
+        # 중앙 ROI: 정사각 또는 직사각
+        if str(ROI_SHAPE).upper() == "RECT":
+            box_w = int(max(ROI_MIN_SIZE, min(ROI_AUTO_W, img_w)))
+            box_h = int(max(ROI_MIN_SIZE, min(ROI_AUTO_H, img_h)))
+        else:
+            box = int(max(ROI_MIN_SIZE, min(ROI_AUTO_SIZE, img_h, img_w)))
+            box_w = box_h = box
+        cy = img_h // 2; cx = img_w // 2
+        x0 = max(0, cx - box_w // 2)
+        y0 = max(0, cy - box_h // 2)
+        x1 = min(img_w, x0 + box_w)
+        y1 = min(img_h, y0 + box_h)
+        w = x1 - x0; h = y1 - y0
         roi_y0_valid, roi_y1_valid = y0, y1
         roi_x0_valid, roi_x1_valid = x0, x1
-        print(f"ROI 확정[AUTO]: x=[{x0},{x1}) y=[{y0},{y1}) (size={w}x{h}), img={img_w}x{img_h}")
+        shape_tag = "AUTO-RECT" if str(ROI_SHAPE).upper()=="RECT" else "AUTO"
+        print(f"ROI 확정[{shape_tag}]: x=[{x0},{x1}) y=[{y0},{y1}) (size={w}x{h}), img={img_w}x{img_h}")
+        return (y0, y1, x0, x1)
+
+    if mode == "PRESET":
+        try:
+            x, y, w, h = ROI_PRESETS[int(ROI_PRESET_INDEX)]
+        except Exception:
+            x, y, w, h = 0, 0, ROI_MIN_SIZE, ROI_MIN_SIZE
+        x0 = max(0, min(int(x), img_w)); y0 = max(0, min(int(y), img_h))
+        x1 = max(x0 + ROI_MIN_SIZE, min(int(x + w), img_w))
+        y1 = max(y0 + ROI_MIN_SIZE, min(int(y + h), img_h))
+        roi_y0_valid, roi_y1_valid = y0, y1
+        roi_x0_valid, roi_x1_valid = x0, x1
+        print(f"ROI 확정[PRESET#{ROI_PRESET_INDEX}]: x=[{x0},{x1}) y=[{y0},{y1}) (size={x1-x0}x{y1-y0}), img={img_w}x{img_h}")
         return (y0, y1, x0, x1)
 
     # MANUAL 모드: 사용자가 지정한 경계를 이미지 경계로 클램프
@@ -76,29 +113,28 @@ def _validate_and_set_roi_bounds(img_h, img_w):
     y1 = max(y0 + 1, min(int(roi_y_end),   img_h))
     x0 = max(0, min(int(roi_x_start), img_w))
     x1 = max(x0 + 1, min(int(roi_x_end),   img_w))
-    h = y1 - y0
-    w = x1 - x0
-
-    # 최소 크기 보장, 실패 시 AUTO로 폴백
+    h = y1 - y0; w = x1 - x0
     if h < ROI_MIN_SIZE or w < ROI_MIN_SIZE:
         print("WARN: 요청 ROI가 이미지 범위 밖/너무 작음 → AUTO 모드로 대체")
-        ROI_MODE_UP = "AUTO"  # local flag to reuse logic below
-        box = int(max(ROI_MIN_SIZE, min(ROI_AUTO_SIZE, img_h, img_w)))
-        cy = img_h // 2
-        cx = img_w // 2
-        y0 = max(0, cy - box // 2)
-        y1 = min(img_h, y0 + box)
-        x0 = max(0, cx - box // 2)
-        x1 = min(img_w, x0 + box)
-        h = y1 - y0
-        w = x1 - x0
-        print(f"ROI 확정[AUTO*]: x=[{x0},{x1}) y=[{y0},{y1}) (size={w}x{h}), img={img_w}x{img_h}")
-    else:
-        print(f"ROI 확정[MANUAL]: x=[{x0},{x1}) y=[{y0},{y1}) (size={w}x{h}), img={img_w}x{img_h}")
-
+        return _validate_and_set_roi_bounds(img_h, img_w)  # AUTO 경로 재사용
     roi_y0_valid, roi_y1_valid = y0, y1
     roi_x0_valid, roi_x1_valid = x0, x1
+    print(f"ROI 확정[MANUAL]: x=[{x0},{x1}) y=[{y0},{y1}) (size={w}x{h}), img={img_w}x{img_h}")
     return (y0, y1, x0, x1)
+
+# 픽셀수 기반 권장 안내 함수
+def _print_roi_recommendation(img_w, img_h, sdg_hz):
+    try:
+        px = int(img_w) * int(img_h)
+        msg = f"ROI 픽셀수={px} ({img_w}x{img_h}), SDG={sdg_hz} Hz"
+        if sdg_hz >= 50 and px >= PIXELS_WARN_50HZ:
+            print("WARN:", msg, "→ 50 Hz에서 readout 부담 큼. SDG_FREQ_HZ=25 권장 또는 ROI/비닝 축소 권장.")
+        elif sdg_hz >= 25 and px >= PIXELS_WARN_25HZ:
+            print("WARN:", msg, "→ 25 Hz에서도 부담 가능. ROI 직사각형 축소나 4×4 비닝 검토.")
+        else:
+            print("INFO:", msg, "→ 현재 주기에서 무난.")
+    except Exception:
+        pass
 
 # 런 폴더(날짜_시간)와 주파수별 저장 폴더를 미리 생성 (효율성 향상)
 code_dir = os.path.dirname(os.path.abspath(__file__))
@@ -367,11 +403,17 @@ def camera_producer():
                 print(f"적용 후 image size: {camera.image_width_pixels} x {camera.image_height_pixels}")
             except Exception:
                 pass
+            # 권장 안내 메시지 추가
+            try:
+                _print_roi_recommendation(camera.image_width_pixels, camera.image_height_pixels, SDG_FREQ_HZ)
+            except Exception:
+                pass
             # ----------------------------------------------
 
             # 카메라가 보고하는 실제 해상도 기준으로 ROI 경계 확정
             try:
                 _validate_and_set_roi_bounds(camera.image_height_pixels, camera.image_width_pixels)
+                _print_roi_recommendation(roi_x1_valid - roi_x0_valid, roi_y1_valid - roi_y0_valid, SDG_FREQ_HZ)
             except Exception as e:
                 print(f"ROI 경계 확정 실패: {e}")
 
