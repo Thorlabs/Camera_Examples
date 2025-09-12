@@ -61,9 +61,6 @@ ROI_PRESETS = [
 ]
 ROI_PRESET_INDEX = 0           # ROI_MODE='PRESET'일 때 사용할 인덱스
 
-# 픽셀 수 기반 권장 임계치 (readout 부담 진단용)
-PIXELS_WARN_50HZ = 250_000     # ≈ 500×500 → 50 Hz에 경계선
-PIXELS_WARN_25HZ = 600_000     # 25 Hz에서도 부담될 수 있는 수준
 
 # ----- Contrast baseline 설정 (딥이 ~1% 수준일 때 더 타이트/견고하게) -----
 CONTRAST_Q = 0.95        # 상위 quantile (예: 0.95 → 상위 5%)
@@ -126,19 +123,6 @@ def _validate_and_set_roi_bounds(img_h, img_w):
     print(f"ROI 확정[MANUAL]: x=[{x0},{x1}) y=[{y0},{y1}) (size={w}x{h}), img={img_w}x{img_h}")
     return (y0, y1, x0, x1)
 
-# 픽셀수 기반 권장 안내 함수
-def _print_roi_recommendation(img_w, img_h, sdg_hz):
-    try:
-        px = int(img_w) * int(img_h)
-        msg = f"ROI 픽셀수={px} ({img_w}x{img_h}), SDG={sdg_hz} Hz"
-        if sdg_hz >= 50 and px >= PIXELS_WARN_50HZ:
-            print("WARN:", msg, "→ 50 Hz에서 readout 부담 큼. SDG_FREQ_HZ=25 권장 또는 ROI/비닝 축소 권장.")
-        elif sdg_hz >= 25 and px >= PIXELS_WARN_25HZ:
-            print("WARN:", msg, "→ 25 Hz에서도 부담 가능. ROI 직사각형 축소나 4×4 비닝 검토.")
-        else:
-            print("INFO:", msg, "→ 현재 주기에서 무난.")
-    except Exception:
-        pass
 
 # 런 폴더(날짜_시간)와 주파수별 저장 폴더를 미리 생성 (효율성 향상)
 code_dir = os.path.dirname(os.path.abspath(__file__))
@@ -155,7 +139,6 @@ for i in range(mw_steps):
     os.makedirs(folder_path, exist_ok=True)
     freq_paths.append(folder_path)
 
-# 런타임 플래그
 PRINT_PER_FRAME = True      # 프레임당 1회 로그 출력 (프레임 번호 + 주파수)
 SAVE_TXT = False            # 주파수 폴더별 .txt 저장 (비권장: 파일 수 많음)
 SAVE_HDF5 = True            # HDF5에 ROI/메타데이터 스트리밍 저장
@@ -171,7 +154,6 @@ frame_queue = queue.Queue(maxsize=512)
 plot_queue = queue.Queue(maxsize=16)  # 라이브 플롯 업데이트용 (메인 스레드에서만 그림)
 intensity_dict = {}  # key: MW 주파수 (Hz), value: list of ROI 총 intensity 값
 
-# 전역 변수 및 동기화를 위한 변수
 frames_captured = 0
 capture_lock = threading.Lock()
 camera_ready = False  # 카메라가 ARM되면 True로 설정
@@ -179,16 +161,13 @@ measurement_complete = False
 
 synth_start_event = threading.Event()  # 연속 프레임 안정 진입 시 SynthHD(CH2) 시작 신호
 
-# --- Abort / Diagnostics ---
 abort_event = threading.Event()
 abort_reason = None             # "no-frames" | "stable-timeout" | "keyboard" | "user" | other
 
-# WAIT/타임아웃 파라미터
 WAIT_LOG_INTERVAL = 2.0       # WAIT 로그 주기 (초)
 MAX_WAIT_STRIKES  = 8         # WAIT 연속 횟수 초과 시 abort (≈ 16 s)
 STABLE_TIMEOUT_SEC = 60.0     # PREROLL 이후 STABLE 미진입 타임아웃
 
-# 최근 적용된 이미지/ROI 크기(요약 로그용)
 _last_image_size = (None, None)  # (w,h)
 _last_roi_size   = (None, None)  # (w,h)
 
@@ -437,17 +416,11 @@ def camera_producer():
                     pass
             except Exception:
                 pass
-            # 권장 안내 메시지 추가
-            try:
-                _print_roi_recommendation(camera.image_width_pixels, camera.image_height_pixels, SDG_FREQ_HZ)
-            except Exception:
-                pass
             # ----------------------------------------------
 
             # 카메라가 보고하는 실제 해상도 기준으로 ROI 경계 확정
             try:
                 _validate_and_set_roi_bounds(camera.image_height_pixels, camera.image_width_pixels)
-                _print_roi_recommendation(roi_x1_valid - roi_x0_valid, roi_y1_valid - roi_y0_valid, SDG_FREQ_HZ)
                 try:
                     global _last_roi_size
                     _last_roi_size = (int(roi_x1_valid - roi_x0_valid), int(roi_y1_valid - roi_y0_valid))
@@ -498,9 +471,7 @@ def camera_producer():
                         last_report = time.time()
                         # 프레임을 받기 시작하면 스트라이크 리셋
                         wait_strikes = 0
-                        # 디버깅: 매 1000프레임마다 진행상황 출력
-                        if frames_captured % 1000 == 0:
-                            print(f"DEBUG: 현재까지 {frames_captured} 프레임 수집됨")
+                        # (진행상황 출력 삭제)
                     # 외부 트리거 대기 상태 감시: 일정 시간 프레임이 없으면 안내 로그 및 abort 처리
                     if time.time() - last_report > WAIT_LOG_INTERVAL and frames_captured == last_frames_local:
                         wait_strikes += 1
@@ -580,22 +551,11 @@ def camera_consumer():
                 ts_now = ts_rel_ns * 1e-9  # ns → s
             else:
                 ts_now = time.time()
-            # --- Diagnostics (A): timestamp source check, print once ---
-            try:
-                if (processed_frames == 0):
-                    if ts_rel_ns is None:
-                        print("INFO: camera timestamp is None → using wall clock for Δt (stability tolerance relaxed to ±1.5 ms).")
-                    else:
-                        print("INFO: camera timestamp detected (ns) → using hardware Δt.")
-            except Exception:
-                pass
             if first_data_ts is None:
                 first_data_ts = ts_now
 
             # PREROLL: 카메라 ARM/CH1 시작 후 초기 구간 무시
             if (ts_now - first_data_ts) < PREROLL_SEC and not stable_mode:
-                if PRINT_PER_FRAME and (processed_frames % 50 == 0):
-                    print(f"PREROLL 진행 중: {(ts_now - first_data_ts):.2f}s")
                 # STABLE 타이머는 PREROLL 이후부터 카운트
                 stable_timer_base = None
                 continue
@@ -608,16 +568,6 @@ def camera_consumer():
                 last_ts = ts_now
                 continue
             dt = ts_now - last_ts
-            # --- Diagnostics (A): print first few Δt samples ---
-            if 'diag_dt_prints' not in locals():
-                diag_dt_prints = 0
-            if diag_dt_prints < 20:
-                try:
-                    src = "ns" if (ts_rel_ns is not None) else "wall"
-                    print(f"Δt sample[{diag_dt_prints+1}]: {dt*1e3:.3f} ms (src={src})")
-                    diag_dt_prints += 1
-                except Exception:
-                    pass
             last_ts = ts_now
             if abs(dt - STABLE_T) <= STABLE_TOL:
                 stable_count += 1
@@ -650,8 +600,6 @@ def camera_consumer():
                     h5_ready = False
                     h5_disabled = False
                 else:
-                    if PRINT_PER_FRAME and (processed_frames % 50 == 0):
-                        print(f"STABILIZING... ({stable_count}/{STABLE_N})")
                     continue
 
             seen += 1  # stable_mode 진입 후에만 카운트
@@ -765,8 +713,6 @@ def camera_consumer():
                         # Contrast: 기준(I_off) 대비 양수로 표시 (맨 위가 1.0)
                         contrast_disp = (y / I_off)
 
-                        if PRINT_PER_FRAME and ((seen - warmup_skip) % mw_steps == 0):
-                            print(f"I_off≈{I_off:.6g} (q={CONTRAST_Q:.2f}, n_top={len(cand)})")
                         # 최신 데이터만 유지 (큐가 가득 차면 가장 오래된 항목 버림)
                         while not plot_queue.empty():
                             try:
@@ -774,11 +720,8 @@ def camera_consumer():
                             except Exception:
                                 break
                         plot_queue.put_nowait((x, pl_norm, contrast_disp))
-                        if PRINT_PER_FRAME and ((seen - warmup_skip) % 10 == 0):
-                            print(f"PLOT push: n_freqs={len(freqs_sorted)}, x≈[{x[0]:.3f}..{x[-1]:.3f}] GHz")
-                except Exception as e:
-                    if PRINT_PER_FRAME:
-                        print(f"PLOT prepare err: {e}")
+                except Exception:
+                    pass
 
         except queue.Empty:
             continue
@@ -934,7 +877,7 @@ sdg_thread.join()
 
 # 디버깅: intensity_dict에 저장된 데이터 개수 확인
 for freq in sorted(intensity_dict.keys()):
-    print(f"DEBUG: 주파수 {freq/1e9:.3f} GHz에 측정된 데이터 개수: {len(intensity_dict[freq])}")
+    pass
 
 # 각 MW 주파수별 평균 intensity 계산 (각 주파수 당 1000회 측정이 목표)
 frequencies = sorted(intensity_dict.keys())
