@@ -122,6 +122,9 @@ frame_queue = queue.Queue(maxsize=512)
 plot_queue = queue.Queue(maxsize=16)  # 라이브 플롯 업데이트용 (메인 스레드에서만 그림)
 intensity_dict = {}  # key: MW 주파수 (Hz), value: list of ROI 총 intensity 값
 
+# 전역 요약 카운터 (컨슈머가 업데이트, 메인 스레드에서 읽기 전용)
+contrast_counts = defaultdict(int)
+
 # 전역 변수 및 동기화를 위한 변수
 frames_captured = 0
 capture_lock = threading.Lock()
@@ -448,11 +451,19 @@ def camera_consumer():
     h5_ready = False     # 모든 dataset 정상 생성 여부
     h5_disabled = False  # 초기화 실패 시 추가 시도/에러 스팸 방지
 
+    # --- ON/OFF 페어 기반 ODMR 대비 계산을 위한 버퍼 ---
+    pair_on_buf = {}
+    pair_off_buf = {}
+    contrast_dict = defaultdict(list)  # key: freq(Hz), value: [contrast_pct...]
+    # HDF5 확장: mw_on(0/1), pair_id(int64)
+    d_mw_on = None
+    d_pair  = None
+
     if PRINT_PER_FRAME:
         print("Consumer 시작: 프레임-주파수 매핑 및 워밍업 스킵 동작 준비")
 
-    # 초기 워밍업 프레임: 정확한 주파수-프레임 정렬을 위해 한 사이클(= mw_steps) 건너뜀
-    warmup_skip = mw_steps
+    # 한 주파수당 2프레임(ON/OFF) 사용 → 한 바퀴=2*mw_steps
+    warmup_skip = 2 * mw_steps
     target_frames = n_frames - warmup_skip
 
     # HDF5 지연 초기화 (첫 유효 ROI 크기 파악 후 생성)
@@ -541,12 +552,16 @@ def camera_consumer():
 
             seen += 1  # stable_mode 진입 후에만 카운트
 
-            # MW 주파수 계산 (로컬 카운터 기반)
-            step_index = (seen - warmup_skip - 1) % mw_steps
-            freq = mw_start + step_index * mw_step  # Hz
+            # MW 주파수/ONOFF 계산 (로컬 카운터 기반)
+            # SynthHD 리스트를 [f0_on, f0_off, f1_on, f1_off, ...] 순으로 구성했다고 가정
+            step_index = (seen - warmup_skip - 1) % (2 * mw_steps)  # 0..(2*mw_steps-1)
+            pair_idx   = step_index // 2                            # 0..(mw_steps-1)
+            mw_on      = 1 if (step_index % 2 == 0) else 0         # 짝수=ON, 홀수=OFF
+            freq = mw_start + pair_idx * mw_step                   # Hz
 
             if PRINT_PER_FRAME:
-                print(f"#{int(frame_num)} freq={freq/1e9:.3f} GHz (step {step_index+1}/{mw_steps})")
+                onoff = 'ON ' if mw_on else 'OFF'
+                print(f"#{int(frame_num)} [{onoff}] freq={freq/1e9:.3f} GHz (pair {pair_idx+1}/{mw_steps})")
 
             # --- Warmup 1 sweep: 로그만 남기고 저장/누적 스킵 ---
             if seen <= warmup_skip:
@@ -569,6 +584,10 @@ def camera_consumer():
                                                 dtype=np.int64, chunks=True, compression="gzip")
                     d_freq  = h5.create_dataset("freq_hz",  shape=(0,), maxshape=(None,),
                                                 dtype=np.float64, chunks=True, compression="gzip")
+                    d_mw_on = h5.create_dataset("mw_on",   shape=(0,), maxshape=(None,),
+                                               dtype=np.uint8,  chunks=True, compression="gzip")
+                    d_pair  = h5.create_dataset("pair_id", shape=(0,), maxshape=(None,),
+                                               dtype=np.int64, chunks=True, compression="gzip")
                     h5_index = 0
                     h5_ready = True
                     print(f"HDF5 준비 완료: {os.path.basename(h5.filename)} (roi={h}x{w})")
@@ -581,6 +600,7 @@ def camera_consumer():
                         pass
                     h5 = None
                     d_roi = d_frame = d_freq = None
+                    d_mw_on = d_pair = None
                     h5_disabled = True
 
             # ROI 저장 (HDF5 우선, 실패 시 옵션에 따라 .txt)
@@ -590,6 +610,8 @@ def camera_consumer():
                     d_roi[h5_index, :, :] = roi.astype(np.uint16)
                     d_frame.resize((h5_index + 1,)); d_frame[h5_index] = int(frame_num)
                     d_freq.resize((h5_index + 1,));  d_freq[h5_index]  = float(freq)
+                    d_mw_on.resize((h5_index + 1,)); d_mw_on[h5_index] = np.uint8(mw_on)
+                    d_pair.resize((h5_index + 1,));  d_pair[h5_index]  = np.int64(pair_idx)
                     h5_index += 1
                 except Exception as e:
                     print(f"HDF5 저장 실패 (frame {frame_num}): {e} — HDF5 저장 비활성화")
@@ -600,6 +622,7 @@ def camera_consumer():
                         pass
                     h5 = None
                     d_roi = d_frame = d_freq = None
+                    d_mw_on = d_pair = None
                     h5_ready = False
                     h5_disabled = True
             elif SAVE_TXT:
@@ -618,6 +641,27 @@ def camera_consumer():
             intensity_dict[freq].append(int(s))
             processed_frames += 1
 
+            # --- ON/OFF 페어 누적 및 대비 계산 ---
+            if mw_on:
+                pair_on_buf[freq] = int(s)
+            else:
+                pair_off_buf[freq] = int(s)
+
+            # 두 버퍼가 모두 채워지면 대비 계산 및 누적
+            if freq in pair_on_buf and freq in pair_off_buf:
+                Ion  = pair_on_buf.pop(freq)
+                Ioff = pair_off_buf.pop(freq)
+                if Ioff <= 0:
+                    C_pct = 0.0
+                else:
+                    C_pct = (Ioff - Ion) / Ioff * 100.0
+                contrast_dict[freq].append(C_pct)
+                # 전역 요약 카운터 업데이트 (스레드-세이프: GIL로 단일 증분은 안전)
+                try:
+                    contrast_counts[freq] += 1
+                except Exception:
+                    pass
+
             # 라이브 플롯 업데이트: (A) 기본은 한 사이클마다, (B) 보조로 최소 8개 주파수 모이면 즉시
             should_push = LIVE_ODMR and ( ((seen - warmup_skip) % mw_steps == 0) or (len(intensity_dict) >= 8 and ((seen - warmup_skip) % 3 == 0)) )
             if should_push:
@@ -626,29 +670,34 @@ def camera_consumer():
                     # 방어: 유효한 주파수/데이터만 사용
                     freqs_sorted = [f for f in freqs_sorted if len(intensity_dict[f]) > 0]
                     if len(freqs_sorted) >= 2:
+                        # (A) PL(norm.)는 intensity 평균으로 유지
                         y = np.array([np.mean(intensity_dict[f]) for f in freqs_sorted], dtype=float)
                         x = np.array([f / 1e9 for f in freqs_sorted], dtype=float)
-                        # 방어: y.max()==0이면 분모 1로
                         y_max = float(y.max()) if y.size and y.max() > 0 else 1.0
                         pl_norm = y / y_max
-                        # 방어: I_off 계산을 더 타이트/견고하게 (상위 5% 중심)
-                        try:
-                            q = float(CONTRAST_Q)
-                            q = min(max(q, 0.80), 0.995)  # 안전 범위 클램프
-                            thresh = np.quantile(y, q)
-                            cand = y[y >= thresh]
-                            if cand.size >= max(CONTRAST_MIN_SAMPLES, int(0.05*len(y))):
-                                # 상위 구간의 중앙값과 평균을 혼합해 outlier에 덜 민감
-                                I_off = 0.5*float(np.median(cand)) + 0.5*float(np.mean(cand))
-                            else:
-                                I_off = float(y.max()) if y.size else 1.0
-                            if not np.isfinite(I_off) or I_off <= 0:
-                                I_off = 1.0
-                        except Exception:
-                            I_off = 1.0
-                        contrast_pct = (I_off - y) / I_off * 100.0
-                        if PRINT_PER_FRAME and ((seen - warmup_skip) % mw_steps == 0):
-                            print(f"I_off≈{I_off:.6g} (q={CONTRAST_Q:.2f}, n_top={len(cand)})")
+
+                        # (B) ODMR contrast는 ON/OFF 페어 기반 중앙값 사용(견고)
+                        have_contrast = [f for f in freqs_sorted if len(contrast_dict[f]) > 0]
+                        if len(have_contrast) >= 2:
+                            contrast_med = np.array([np.median(contrast_dict[f]) if len(contrast_dict[f])>0 else np.nan for f in freqs_sorted], dtype=float)
+                        else:
+                            contrast_med = np.full_like(pl_norm, np.nan, dtype=float)
+
+                        # NaN 방어: 대비가 없는 지점은 직전값 보간 또는 0으로 대체
+                        if np.all(np.isnan(contrast_med)):
+                            contrast_med = np.zeros_like(pl_norm)
+                        else:
+                            # 간단 보간(선형) — 가장자리 NaN은 최근값 유지
+                            try:
+                                idx = np.arange(len(contrast_med))
+                                m = np.isfinite(contrast_med)
+                                if m.any():
+                                    contrast_med[~m] = np.interp(idx[~m], idx[m], contrast_med[m])
+                            except Exception:
+                                contrast_med = np.nan_to_num(contrast_med, nan=0.0)
+
+                        contrast_pct = contrast_med
+
                         # 최신 데이터만 유지 (큐가 가득 차면 가장 오래된 항목 버림)
                         while not plot_queue.empty():
                             try:
@@ -828,3 +877,11 @@ for freq in sorted(intensity_dict.keys()):
 # 각 MW 주파수별 평균 intensity 계산 (각 주파수 당 1000회 측정이 목표)
 frequencies = sorted(intensity_dict.keys())
 avg_intensities = [np.mean(intensity_dict[freq]) for freq in frequencies]
+
+# Contrast 개수 요약 (컨슈머가 누적해둔 전역 카운터 사용)
+try:
+    for freq in frequencies:
+        cN = int(contrast_counts.get(freq, 0))
+        print(f"DEBUG: 주파수 {freq/1e9:.3f} GHz 대비 샘플 수: {cN}")
+except Exception:
+    pass
