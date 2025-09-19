@@ -173,8 +173,8 @@ def sdg_control():
         sdg.write("C2:BSWV HLEV,3.0")   # High level = 3.0 V (baseline)
         sdg.write("C2:BSWV LLEV,0.0")   # Low  level = 0.0 V (pulse)
         sdg.write("C2:BSWV WIDTH,2e-4")   # 200 µs (LOW 폭으로 사용; step time보다 짧게)
-        # Baseline HIGH (3 V), short LOW (~200 us) each 20 ms
-        sdg.write("C2:BSWV DUTY,99")   # 99% High → 1% Low at 50 Hz ≈ 200 µs
+        # Ensure ~200 µs pulse at 25 Hz: duty ≈ 0.5% (0.0002 / 0.04)
+        sdg.write("C2:BSWV DUTY,0.5")   # 0.5% duty → ~200 µs pulse width at 25 Hz
         # Some firmware may ignore POL, so this is best-effort only
         try:
             sdg.write("C2:BSWV POL,POS")
@@ -276,10 +276,53 @@ def camera_producer():
             # 하드웨어 트리거 사용 시 내부 프레임레이트 제어는 비활성화
             camera.is_frame_rate_control_enabled = False
 
+            # Pre-emptively disable binning before ROI to avoid scaled image sizes
+            try:
+                camera.bin_x = 1
+                camera.bin_y = 1
+            except Exception:
+                pass
+
+            # --- Full-frame reset before applying ROI (prevents tiny 80x48 frames) ---
+            try:
+                # Try common SDK attributes for full sensor size
+                full_h = int(getattr(camera, "sensor_height_pixels", 0) or getattr(camera, "maximum_image_height_pixels", 0) or 0)
+                full_w = int(getattr(camera, "sensor_width_pixels", 0)  or getattr(camera, "maximum_image_width_pixels", 0)  or 0)
+                if full_h <= 0 or full_w <= 0:
+                    # Fallback: if roi_range is available, use its max dimensions
+                    rr = getattr(camera, "roi_range", None)
+                    if rr and hasattr(rr, "maximum_width") and hasattr(rr, "maximum_height"):
+                        full_w = int(rr.maximum_width)
+                        full_h = int(rr.maximum_height)
+                if full_h > 0 and full_w > 0:
+                    # Turn off binning first to avoid scaled limits
+                    try:
+                        camera.bin_x = 1
+                        camera.bin_y = 1
+                    except Exception:
+                        pass
+                    for setter in (
+                        lambda: setattr(camera, "roi", (0, 0, full_w, full_h)),
+                        lambda: camera.set_roi(0, 0, full_w, full_h),
+                    ):
+                        try:
+                            setter(); break
+                        except Exception:
+                            pass
+                    print(f"Full-frame reset: {full_w}x{full_h} 요청")
+            except Exception as e:
+                print(f"Full-frame reset 실패(무시): {e}")
+
             # ---- 하드웨어 ROI/비닝 설정 (장치 지원 시) ----
             try:
                 img_h = int(getattr(camera, "image_height_pixels", 0) or 0)
                 img_w = int(getattr(camera, "image_width_pixels", 0) or 0)
+                if img_h < 200 or img_w < 200:
+                    # Suspect prior sub-sampling; re-read full limits
+                    fh = int(getattr(camera, "sensor_height_pixels", 0) or getattr(camera, "maximum_image_height_pixels", 0) or 0)
+                    fw = int(getattr(camera, "sensor_width_pixels", 0)  or getattr(camera, "maximum_image_width_pixels", 0)  or 0)
+                    if fh > 0 and fw > 0:
+                        img_h, img_w = fh, fw
                 if img_h <= 0 or img_w <= 0:
                     raise RuntimeError("카메라 해상도 조회 실패")
 
