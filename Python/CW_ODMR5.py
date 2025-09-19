@@ -37,10 +37,14 @@ roi_x_start, roi_x_end = 550, 1001
 
 # ROI 모드: 'AUTO' or 'MANUAL'
 #  - AUTO  : 카메라 프레임 중앙에 고정 박스(ROI_AUTO_SIZE x ROI_AUTO_SIZE)
-#  - MANUAL: 아래 roi_* 경계를 사용 (이미지 경계로 자동 보정)
-ROI_MODE = "AUTO"          # 실험 중에는 AUTO 권장, 필요 시 'MANUAL'로 변경
+#  - MANUAL: 중앙 정렬 500x500(align)로 강제
+ROI_MODE = "MANUAL"        # 500x500 확보용: 런타임에서 중앙 정렬 500x500(align)로 강제
 ROI_AUTO_SIZE = 512         # AUTO 모드에서 사용할 정사각형 ROI 크기(픽셀) — 샘플(≈500–1000px)에 맞춤
 ROI_MIN_SIZE  = 64          # 어떤 경우에도 최소 보장 크기(너무 작은 ROI 방지)
+
+# MANUAL 중앙 강제 ROI 설정용(정확한 500x500을 센터에 맞춰 적용, 정렬 단위 보장)
+ROI_TARGET_SIZE = 500   # 원하는 정사각형 ROI 한 변(px)
+ROI_ALIGN       = 8     # 하드웨어 정렬 단위(대부분 8 또는 16 권장)
 
 # ----- Contrast baseline 설정 (딥이 ~1% 수준일 때 더 타이트/견고하게) -----
 CONTRAST_Q = 0.95        # 상위 quantile (예: 0.95 → 상위 5%)
@@ -70,30 +74,23 @@ def _validate_and_set_roi_bounds(img_h, img_w):
         print(f"ROI 확정[AUTO]: x=[{x0},{x1}) y=[{y0},{y1}) (size={w}x{h}), img={img_w}x{img_h}")
         return (y0, y1, x0, x1)
 
-    # MANUAL 모드: 사용자가 지정한 경계를 이미지 경계로 클램프
-    y0 = max(0, min(int(roi_y_start), img_h))
-    y1 = max(y0 + 1, min(int(roi_y_end),   img_h))
-    x0 = max(0, min(int(roi_x_start), img_w))
-    x1 = max(x0 + 1, min(int(roi_x_end),   img_w))
+    # MANUAL 모드: 중앙 정사각형(ROI_TARGET_SIZE, 정렬 보장)으로 강제 적용
+    # 1) 타겟 크기를 프레임에 맞춰 제한 + 정렬 단위에 스냅
+    size_req = min(int(ROI_TARGET_SIZE), int(img_h), int(img_w))
+    size_aligned = max(ROI_MIN_SIZE, (size_req // ROI_ALIGN) * ROI_ALIGN)
+    size_aligned = min(size_aligned, img_h, img_w)
+
+    # 2) 센터 기준 좌표 계산(프레임 내부에 완전히 들어오도록 클램프)
+    cy = img_h // 2
+    cx = img_w // 2
+    y0 = max(0, min(cy - size_aligned // 2, img_h - size_aligned))
+    y1 = y0 + size_aligned
+    x0 = max(0, min(cx - size_aligned // 2, img_w - size_aligned))
+    x1 = x0 + size_aligned
     h = y1 - y0
     w = x1 - x0
 
-    # 최소 크기 보장, 실패 시 AUTO로 폴백
-    if h < ROI_MIN_SIZE or w < ROI_MIN_SIZE:
-        print("WARN: 요청 ROI가 이미지 범위 밖/너무 작음 → AUTO 모드로 대체")
-        ROI_MODE_UP = "AUTO"  # local flag to reuse logic below
-        box = int(max(ROI_MIN_SIZE, min(ROI_AUTO_SIZE, img_h, img_w)))
-        cy = img_h // 2
-        cx = img_w // 2
-        y0 = max(0, cy - box // 2)
-        y1 = min(img_h, y0 + box)
-        x0 = max(0, cx - box // 2)
-        x1 = min(img_w, x0 + box)
-        h = y1 - y0
-        w = x1 - x0
-        print(f"ROI 확정[AUTO*]: x=[{x0},{x1}) y=[{y0},{y1}) (size={w}x{h}), img={img_w}x{img_h}")
-    else:
-        print(f"ROI 확정[MANUAL]: x=[{x0},{x1}) y=[{y0},{y1}) (size={w}x{h}), img={img_w}x{img_h}")
+    print(f"ROI 확정[MANUAL]: x=[{x0},{x1}) y=[{y0},{y1}) (size={w}x{h}), img={img_w}x{img_h}")
 
     roi_y0_valid, roi_y1_valid = y0, y1
     roi_x0_valid, roi_x1_valid = x0, x1
@@ -149,7 +146,7 @@ def sdg_control():
         sdg.write("*RST")
         time.sleep(0.1)
         sdg.write("C1:BSWV WVTP,PULSE")   # 펄스 모드 선택
-        sdg.write("C1:BSWV FRQ,50")         # 50Hz 펄스 → 20ms 주기
+        sdg.write("C1:BSWV FRQ,25")         # 25Hz 펄스 → 40ms 주기
         sdg.write("C1:OUTP LOAD,HZ")
         sdg.write("C1:BSWV AMP,3.3")      # 3.3 Vpp (LVTTL range)
         sdg.write("C1:BSWV OFST,1.65")    # 0–3.3 V level (centered)
@@ -170,7 +167,7 @@ def sdg_control():
     # -----------------------
     try:
         sdg.write("C2:BSWV WVTP,PULSE")
-        sdg.write("C2:BSWV FRQ,50")
+        sdg.write("C2:BSWV FRQ,25")
         sdg.write("C2:OUTP LOAD,HZ")
         # Use explicit levels only (avoid AMP/OFST overrides)
         sdg.write("C2:BSWV HLEV,3.0")   # High level = 3.0 V (baseline)
@@ -273,7 +270,7 @@ def camera_producer():
             except Exception as e:
                 print(f"트리거 모드/극성 설정 실패: {e}")
 
-            camera.exposure_time_us = 1500  # 1.5 ms 노출 (단위: 마이크로초)
+            camera.exposure_time_us = 20000  # 20 ms 노출 (단위: 마이크로초)
             camera.frames_per_trigger_zero_for_unlimited = 1
             camera.image_poll_timeout_ms = 1000
             # 하드웨어 트리거 사용 시 내부 프레임레이트 제어는 비활성화
@@ -310,11 +307,15 @@ def camera_producer():
                     else:
                         print("HW ROI(AUTO) 적용 실패: 장치에서 ROI 속성을 지원하지 않음 (소프트웨어 크롭으로 대체).")
                 else:
-                    # MANUAL: 사용자가 준 경계를 하드웨어 ROI로 시도
-                    req_x = int(roi_x_start)
-                    req_y = int(roi_y_start)
-                    req_w = int(max(ROI_MIN_SIZE, roi_x_end - roi_x_start))
-                    req_h = int(max(ROI_MIN_SIZE, roi_y_end - roi_y_start))
+                    # MANUAL: 중앙 500x500(정렬 보장)으로 하드웨어 ROI 적용
+                    size_req = min(int(ROI_TARGET_SIZE), int(img_h), int(img_w))
+                    size_aligned = max(ROI_MIN_SIZE, (size_req // ROI_ALIGN) * ROI_ALIGN)
+                    size_aligned = min(size_aligned, img_h, img_w)
+                    cx, cy = img_w // 2, img_h // 2
+                    req_x = max(0, min(cx - size_aligned // 2, img_w - size_aligned))
+                    req_y = max(0, min(cy - size_aligned // 2, img_h - size_aligned))
+                    req_w = size_aligned
+                    req_h = size_aligned
                     for setter in (
                         lambda: setattr(camera, "roi", (req_x, req_y, req_w, req_h)),
                         lambda: camera.set_roi(req_x, req_y, req_w, req_h),
@@ -325,30 +326,32 @@ def camera_producer():
                             pass
                     if applied:
                         print(f"HW ROI(MANUAL) 적용: x={req_x}, y={req_y}, w={req_w}, h={req_h}")
+                        if max(req_w, req_h) >= 480:
+                            print("NOTE: ROI>=~500px → 25 Hz(40 ms) 트리거 주기 권장 (리드아웃 여유 확보)")
                     else:
                         print("HW ROI(MANUAL) 적용 실패: 장치에서 ROI 속성을 지원하지 않음 (소프트웨어 크롭으로 대체).")
             except Exception as e:
                 print(f"HW ROI 설정 중 예외: {e}")
 
-            # 비닝(가능 시 2x2) → 리드아웃/대역폭 완화
+            # 비닝 해제(1x1) — 500x500 해상도 확보를 위해 강제
             try:
-                binned = False
+                binned_off = False
                 for setter in (
-                    lambda: setattr(camera, "bin_x", 2),
-                    lambda: setattr(camera, "bin_y", 2),
-                    lambda: setattr(camera, "binning", 2),
-                    lambda: camera.set_binx(2),
-                    lambda: camera.set_biny(2),
-                    lambda: camera.set_binning(2),
+                    lambda: setattr(camera, "bin_x", 1),
+                    lambda: setattr(camera, "bin_y", 1),
+                    lambda: setattr(camera, "binning", 1),
+                    lambda: camera.set_binx(1),
+                    lambda: camera.set_biny(1),
+                    lambda: camera.set_binning(1),
                 ):
                     try:
-                        setter(); binned = True
+                        setter(); binned_off = True
                     except Exception:
                         pass
-                if binned:
-                    print("HW 비닝 적용: 2x2 (가능한 축에 한해)")
+                if binned_off:
+                    print("HW 비닝 설정: 1x1 (무비닝)")
                 else:
-                    print("HW 비닝 미적용: 장치가 해당 속성을 지원하지 않음.")
+                    print("HW 비닝 변경 불가: 장치가 해당 속성을 노출하지 않음.")
             except Exception as e:
                 print(f"HW 비닝 설정 중 예외: {e}")
             # ----------------------------------------------
@@ -356,6 +359,12 @@ def camera_producer():
             # 카메라가 보고하는 실제 해상도 기준으로 ROI 경계 확정
             try:
                 _validate_and_set_roi_bounds(camera.image_height_pixels, camera.image_width_pixels)
+                try:
+                    h_eff = int(roi_y1_valid - roi_y0_valid)
+                    if h_eff >= 480:
+                        print("GUIDE: 큰 ROI(>=~500px)에서는 25 Hz 트리거(40 ms 주기)로 운용하세요 — 프레임 드롭 방지.")
+                except Exception:
+                    pass
             except Exception as e:
                 print(f"ROI 경계 확정 실패: {e}")
 
@@ -431,11 +440,11 @@ def camera_producer():
 # -----------------------------------------
 def camera_consumer():
     global measurement_complete, intensity_dict
-    # 안정 진입 판정 파라미터 (50 Hz 기준)
+    # 안정 진입 판정 파라미터 (25 Hz 기준)
     PREROLL_SEC = 1.0
     STABLE_N = 25
-    STABLE_T = 0.020     # 20 ms (50 Hz)
-    STABLE_TOL = 0.0020  # ±2.0 ms 허용 (wall clock fallback 대비)
+    STABLE_T = 0.040     # 40 ms (25 Hz)
+    STABLE_TOL = 0.0040  # ±4.0 ms 허용 (wall clock fallback 대비)
     stable_mode = False
     stable_count = 0
     last_ts = None
@@ -505,7 +514,7 @@ def camera_consumer():
                     print(f"PREROLL 진행 중: {(ts_now - first_data_ts):.2f}s")
                 continue
 
-            # 안정성 판정: 직전 프레임과의 간격이 목표 주기(20 ms)±tol인지 검사
+            # 안정성 판정: 직전 프레임과의 간격이 목표 주기(40 ms)±tol인지 검사
             if last_ts is None:
                 last_ts = ts_now
                 continue
